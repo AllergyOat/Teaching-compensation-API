@@ -1,0 +1,136 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String   @id @default(cuid())
+  firstName     String?
+  lastName      String?
+  degree        String? // วุฒิการศึกษา (เช่น ป.เอก)
+  position      String? // ตำแหน่ง (เช่น อ.ดร.)
+  department    String? // สังกัดวิชา
+  faculty       String? // คณะ
+  major         String? // สาขา
+  type          String? // ประเภทอาจารย์ (เช่น อาจารย์ประจำ, อาจารย์พิเศษ)
+  teachingLevel String? // ระดับการสอน (เช่น ป.ตรี, ป.โท, ป.เอก)
+  email         String   @unique
+  password      String
+  role          UserRole @default(USER)
+  isVerified    Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  emailVerificationTokens EmailVerificationToken[]
+  passwordResetOtps       PasswordResetOtp[]
+  forms                   Form[]
+}
+
+model EmailVerificationToken {
+  id        String    @id @default(cuid())
+  userId    String
+  token     String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model PasswordResetOtp {
+  id        String    @id @default(cuid())
+  userId    String
+  otpHash   String
+  expiresAt DateTime
+  usedAt    DateTime?
+  attempts  Int       @default(0)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Form {
+  id            String     @id @default(cuid())
+  userId        String
+  user          User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  isCompensated Boolean    @default(false) // false = สอนปกติ, true = มีการชดเชย
+  program       Program    @default(REGULAR_PROGRAM)
+  section       Section    @default(LECTURE)
+  month         String
+  semester      String
+  year          Int
+  subjectId     String
+  subjectName   String
+  lectureId     String?
+  labId         String?
+  status        FormStatus @default(PENDING)
+  adminComment  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  schedule     Schedule[]
+  compensation Compensation[]
+
+  @@index([userId])
+}
+
+model Schedule {
+  id        String   @id @default(cuid())
+  formId    String
+  form      Form     @relation(fields: [formId], references: [id], onDelete: Cascade)
+  date      DateTime
+  time      String
+  totalHour Int
+  topic     String
+  room      String
+  note      String?
+}
+
+model Compensation {
+  id           String   @id @default(cuid())
+  formId       String
+  form         Form     @relation(fields: [formId], references: [id], onDelete: Cascade)
+  previousDate DateTime
+  previousTime String
+  newDate      DateTime
+  newTime      String
+  reason       String
+}
+
+enum UserRole {
+  USER
+  MAJOR_ADMIN
+  FACULTY_ADMIN
+  SUPER_ADMIN
+}
+
+enum FormStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum Program {
+  REGULAR_PROGRAM // ภาคปกติ
+  SPECIAL_PROGRAM // ภาคพิเศษ
+}
+
+enum Section {
+  LECTURE // บรรยาย
+  LAB // ปฏิบัติการ
+}
