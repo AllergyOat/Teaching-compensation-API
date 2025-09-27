@@ -2,6 +2,7 @@ import { Router } from "express";
 import {
   getUserProfile,
   listMyForms,
+  listMyFormsStatus,
   updateUserProfile,
 } from "../controllers/user.controller.js";
 import { requireAuth } from "../middlewares/auth.js";
@@ -11,6 +12,7 @@ import { userSchema } from "../schemas/auth.schemas.js";
 const router = Router();
 
 router.get("/home", requireAuth, listMyForms);
+router.get("/status", requireAuth, listMyFormsStatus);
 router.get("/profile", requireAuth, getUserProfile);
 router.post("/profile", requireAuth, validate(userSchema), updateUserProfile);
 

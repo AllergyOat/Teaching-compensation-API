@@ -79,6 +79,58 @@ export const listMyForms = async (req, res, next) => {
   }
 };
 
+export const listMyFormsStatus = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { month, year } = req.query;
+
+    const where = { userId };
+
+    // Filter by month if provided
+    if (month) {
+      where.month = month;
+    }
+
+    // Filter by year if provided
+    if (year) {
+      where.year = parseInt(year);
+    }
+
+    // Get forms with specific fields
+    const forms = await prisma.form.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        subjectId: true,
+        subjectName: true,
+        createdAt: true,
+        status: true,
+        adminComment: true,
+      },
+    });
+
+    // Initialize status counts
+    const statusCounts = {
+      PENDING: 0,
+      APPROVED: 0,
+      REJECTED: 0,
+    };
+
+    // Count forms by status
+    forms.forEach((form) => {
+      statusCounts[form.status]++;
+    });
+
+    res.json({
+      statusCounts,
+      forms,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const getUserProfile = async (req, res, next) => {
   try {
     const userId = req.user.id;
@@ -139,4 +191,3 @@ export const updateUserProfile = async (req, res, next) => {
     next(err);
   }
 };
-
