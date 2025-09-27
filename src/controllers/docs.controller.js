@@ -5,6 +5,8 @@ import Docxtemplater from "docxtemplater";
 import prisma from "../config/prisma.js";
 import { fileURLToPath } from "url";
 import { formatThaiDate, mapProgramToThai } from "../utils/formatToThai.js";
+import { calculateAmount } from "../utils/calculateAmount.js";
+import ThaiBahtText from "thai-baht-text";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -508,6 +510,162 @@ export const generateDocx = (req, res) => {
         process.env.NODE_ENV === "development"
           ? error.message
           : "Failed to generate document",
+      stack: process.env.NODE_ENV === "development" ? error.stack : undefined,
+    });
+  }
+};
+
+export const generateEvidenceDocx = async (req, res) => {
+  try {
+    console.log("Generate Evidence DOCX request received");
+
+    const { formId } = req.params;
+    const formData = req.body;
+
+    if (!formId) {
+      return res.status(400).json({
+        error: "Form ID is required",
+      });
+    }
+
+    // Fetch form and user data from database
+    const form = await prisma.form.findUnique({
+      where: {
+        id: formId,
+      },
+      include: {
+        user: true,
+        schedule: true,
+      },
+    });
+
+    if (!form) {
+      return res.status(404).json({
+        error: "Form not found",
+        formId: formData.formId,
+      });
+    }
+
+    // Path to evidence template file
+    const templatePath = path.join(
+      __dirname,
+      "../templates/output/หลักฐานการเบิกจ่ายเงินค่าสอนพิเศษและค่าสอนเกินภาระงานสอนในสถาบันอุดมศึกษา.docx"
+    );
+
+    if (!fs.existsSync(templatePath)) {
+      console.error("Template file not found at:", templatePath);
+      return res.status(500).json({
+        error: "Evidence template file not found",
+        path: templatePath,
+      });
+    }
+
+    // Read template file
+    const content = fs.readFileSync(templatePath, "binary");
+    const zip = new PizZip(content);
+
+    // Create Docxtemplater instance
+    const doc = new Docxtemplater(zip, {
+      paragraphLoop: true,
+      linebreaks: true,
+    });
+
+    // Prepare template data
+    const name = `${form.user.firstName || ""} ${
+      form.user.lastName || ""
+    }`.trim();
+    const totalHours = Array.isArray(form.schedule)
+      ? form.schedule.reduce(
+          (sum, s) => sum + (parseFloat(s.totalHour) || 0),
+          0
+        )
+      : 0;
+    const amount = calculateAmount(totalHours, form.section) || "";
+    const templateData = {
+      major: form.user.major || "",
+      program: mapProgramToThai(form.program) || "",
+      faculty: form.user.department || "",
+      semester: form.semester || "",
+      year: form.year || "",
+      month: form.month || "",
+
+      id: 1,
+      name: name || "",
+      position: form.user.position || "",
+      b1: formData.b1 || "",
+      b2: formData.b2 || "",
+      b3: formData.b3 || "",
+      hours: totalHours.toString(),
+      amount: amount,
+      thaiAmount: ThaiBahtText(amount) || "",
+    };
+
+    console.log("Template data prepared:", templateData);
+
+    try {
+      // Render document with data
+      doc.render(templateData);
+      console.log("Document rendered successfully");
+    } catch (renderError) {
+      console.error("Render error:", renderError);
+      return res.status(400).json({
+        error: "Error rendering template",
+        details: renderError.message,
+        properties: renderError.properties || {},
+      });
+    }
+
+    // Generate output buffer
+    const buffer = doc.getZip().generate({
+      type: "nodebuffer",
+      compression: "DEFLATE",
+    });
+
+    // Generate filename
+    const timestamp = Date.now();
+    const nameSlug = name
+      ? name.replace(/[^\w\s-]/g, "").replace(/\s+/g, "_")
+      : "evidence";
+    const filename = `evidence_${
+      formData.id || "user"
+    }_${nameSlug}_${timestamp}.docx`;
+
+    console.log("Generated file:", filename, "Size:", buffer.length, "bytes");
+
+    // Set response headers for file download with proper encoding
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    );
+
+    // Use encodeURIComponent to handle special characters
+    const encodedFilename = encodeURIComponent(filename);
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename*=UTF-8''${encodedFilename}`
+    );
+    res.setHeader("Content-Length", buffer.length);
+
+    // Send file
+    res.send(buffer);
+  } catch (error) {
+    console.error("Generate Evidence DOCX error:", error);
+
+    // Handle specific errors
+    if (error.message.includes("ENOENT")) {
+      return res.status(500).json({
+        error: "Template file not found",
+        details:
+          "The evidence template file is missing from the templates folder",
+      });
+    }
+
+    return res.status(500).json({
+      error: "Internal server error",
+      details:
+        process.env.NODE_ENV === "development"
+          ? error.message
+          : "Failed to generate evidence document",
       stack: process.env.NODE_ENV === "development" ? error.stack : undefined,
     });
   }

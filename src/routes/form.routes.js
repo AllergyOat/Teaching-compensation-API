@@ -6,11 +6,12 @@ import {
   deleteForm,
 } from "../controllers/form.controller.js";
 import {
+  generateScheduleDocx,
   generateCompensationDocx,
   generateDocx,
-  generateScheduleDocx,
+  generateEvidenceDocx,
 } from "../controllers/docs.controller.js";
-import { requireAuth } from "../middlewares/auth.js";
+import { requireAuth, permit } from "../middlewares/auth.js";
 
 const router = Router();
 
@@ -24,6 +25,7 @@ router.get("/:formId/generate-report", requireAuth, generateScheduleDocx);
 router.get("/:compensationId/generate-compensation", requireAuth, generateCompensationDocx);
 
 // OUTPUT SECTION
-router.post("/generate-docx", requireAuth, generateDocx);
+router.post("/generate-docx", requireAuth, permit("MAJOR_ADMIN"), generateDocx);
+router.post("/:formId/generate-evidence", requireAuth, generateEvidenceDocx);
 
 export default router;

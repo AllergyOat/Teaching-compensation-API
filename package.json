@@ -23,6 +23,7 @@
     "jsonwebtoken": "^9.0.2",
     "nodemailer": "^7.0.6",
     "pizzip": "^3.2.0",
+    "thai-baht-text": "^2.0.5",
     "zod": "^4.1.5"
   },
   "devDependencies": {
