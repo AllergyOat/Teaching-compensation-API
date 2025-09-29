@@ -21,11 +21,11 @@ router.put("/edit-form/:id", requireAuth, editForm);
 router.delete("/:id", requireAuth, deleteForm);
 
 // INPUT SECTION
-router.get("/:formId/generate-report", requireAuth, generateScheduleDocx);
+router.get("/:formId/:sectionId/generate-report", requireAuth, generateScheduleDocx);
 router.get("/:compensationId/generate-compensation", requireAuth, generateCompensationDocx);
 
 // OUTPUT SECTION
 router.post("/generate-docx", requireAuth, permit("MAJOR_ADMIN"), generateDocx);
-router.post("/:formId/generate-evidence", requireAuth, generateEvidenceDocx);
+router.post("/:formId/:sectionId/generate-evidence", requireAuth, generateEvidenceDocx);
 
 export default router;

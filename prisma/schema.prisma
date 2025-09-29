@@ -75,30 +75,38 @@ model Form {
   year          Int
   subjectId     String
   subjectName   String
-  lectureId     String?
-  labId         String?
   status        FormStatus @default(PENDING)
   adminComment  String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  schedule     Schedule[]
-  compensation Compensation[]
+  formScheduleDetails FormSections[]
+  compensation        Compensation[]
 
   @@index([userId])
 }
 
-model Schedule {
+model FormSections {
   id        String   @id @default(cuid())
   formId    String
   form      Form     @relation(fields: [formId], references: [id], onDelete: Cascade)
-  date      DateTime
-  time      String
-  totalHour Int
-  topic     String
-  room      String
-  note      String?
+  sectionId String
+  kind      Section? @default(LECTURE)
+
+  schedules Schedule[]
+}
+
+model Schedule {
+  id            String       @id @default(cuid())
+  formSectionId String
+  formSection   FormSections @relation(fields: [formSectionId], references: [id], onDelete: Cascade)
+  date          DateTime
+  time          String
+  totalHour     Int
+  topic         String
+  room          String
+  note          String?
 }
 
 model Compensation {

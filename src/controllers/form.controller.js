@@ -35,18 +35,37 @@ export const createForm = async (req, res) => {
       });
     }
 
-    // create data
-    const schedulesCreate = body.schedules.map((s) => ({
-      date: new Date(s.date), // convert to Date
-      time: s.time,
-      totalHour: s.totalHour,
-      topic: s.topic,
-      room: s.room,
-      note: s.note ?? null,
-    }));
+    // create data - handle new nested structure for FormSections and Schedules
+    const formSectionsCreate = [];
+
+    // Process formScheduleDetails to create FormSections with nested Schedules
+    if (body.formScheduleDetails && Array.isArray(body.formScheduleDetails)) {
+      body.formScheduleDetails.forEach((detail) => {
+        if (detail.schedules && Array.isArray(detail.schedules)) {
+          const schedulesForSection = detail.schedules.map((s) => ({
+            date: new Date(s.date), // convert to Date
+            time: s.time,
+            totalHour: s.totalHour,
+            topic: s.topic,
+            room: s.room,
+            note: s.note ?? null,
+          }));
+
+          formSectionsCreate.push({
+            sectionId: detail.lectureId,
+            kind: body.form.section === "LECTURE" ? "LECTURE" : "LAB",
+            schedules: {
+              create: schedulesForSection,
+            },
+          });
+        }
+      });
+    }
 
     const compensationCreate =
-      body.isCompensated && body.compensation && body.compensation.length > 0
+      body.form.isCompensated &&
+      body.compensation &&
+      body.compensation.length > 0
         ? {
             create: body.compensation.map((comp) => ({
               previousDate: new Date(comp.previousDate),
@@ -62,23 +81,25 @@ export const createForm = async (req, res) => {
     const created = await prisma.form.create({
       data: {
         userId,
-        isCompensated: body.isCompensated,
-        program: body.program,
-        month: body.month,
-        semester: body.semester,
-        year: body.year,
-        subjectId: body.subjectId,
-        subjectName: body.subjectName,
-        lectureId: body.lectureId ?? null,
-        labId: body.labId ?? null,
+        isCompensated: body.form.isCompensated,
+        program: body.form.program,
+        month: body.form.month,
+        semester: body.form.semester,
+        year: body.form.year,
+        subjectId: body.form.subjectId,
+        subjectName: body.form.subjectName,
 
-        schedule: {
-          create: schedulesCreate, // relation name is "schedule" (per your schema)
+        formScheduleDetails: {
+          create: formSectionsCreate, // Create FormSections with nested Schedules
         },
         compensation: compensationCreate, // optional
       },
       include: {
-        schedule: true,
+        formScheduleDetails: {
+          include: {
+            schedules: true,
+          },
+        },
         compensation: true,
         user: {
           select: { id: true, firstName: true, lastName: true, email: true },
@@ -115,7 +136,11 @@ export const editForm = async (req, res) => {
     const existingForm = await prisma.form.findUnique({
       where: { id: formId },
       include: {
-        schedule: true,
+        formScheduleDetails: {
+          include: {
+            schedules: true,
+          },
+        },
         compensation: true,
         user: { select: { id: true, role: true } },
       },
@@ -138,74 +163,71 @@ export const editForm = async (req, res) => {
 
     // Use transaction for atomic updates
     const updated = await prisma.$transaction(async (tx) => {
-      // 1. Delete existing schedules
-      await tx.schedule.deleteMany({
-        where: { formId },
-      });
+      const formSectionsCreate = [];
+      if (body.formScheduleDetails && Array.isArray(body.formScheduleDetails)) {
+        body.formScheduleDetails.forEach((detail) => {
+          if (detail.schedules && Array.isArray(detail.schedules)) {
+            const schedulesForSection = detail.schedules.map((s) => ({
+              date: new Date(s.date),
+              time: s.time,
+              totalHour: s.totalHour,
+              topic: s.topic,
+              room: s.room,
+              note: s.note ?? null,
+            }));
 
-      // 2. Handle compensation deletion if needed
-      if (existingForm.compensation && existingForm.compensation.length > 0) {
-        // Delete all existing compensations
-        await tx.compensation.deleteMany({
-          where: { formId },
+            formSectionsCreate.push({
+              sectionId: detail.lectureId,
+              kind: body.form.section === "LECTURE" ? "LECTURE" : "LAB",
+              schedules: {
+                create: schedulesForSection,
+              },
+            });
+          }
         });
       }
 
-      // 3. Prepare new schedule data
-      const schedulesCreate = body.schedules.map((s) => ({
-        date: new Date(s.date),
-        time: s.time,
-        totalHour: s.totalHour,
-        topic: s.topic,
-        room: s.room,
-        note: s.note ?? null,
-      }));
-
-      // 4. Prepare compensation data if needed
+      // Prepare compensation data if needed
       let compensationCreate = undefined;
-      if (body.isCompensated && body.compensation) {
+      if (
+        body.form.isCompensated &&
+        body.compensation &&
+        body.compensation.length > 0
+      ) {
         compensationCreate = {
-          create: body.compensation.map
-            ? body.compensation.map((comp) => ({
-                previousDate: new Date(comp.previousDate),
-                previousTime: comp.previousTime,
-                newDate: new Date(comp.newDate),
-                newTime: comp.newTime,
-                reason: comp.reason,
-              }))
-            : [
-                {
-                  previousDate: new Date(body.compensation.previousDate),
-                  previousTime: body.compensation.previousTime,
-                  newDate: new Date(body.compensation.newDate),
-                  newTime: body.compensation.newTime,
-                  reason: body.compensation.reason,
-                },
-              ],
+          create: body.compensation.map((comp) => ({
+            previousDate: new Date(comp.previousDate),
+            previousTime: comp.previousTime,
+            newDate: new Date(comp.newDate),
+            newTime: comp.newTime,
+            reason: comp.reason,
+          })),
         };
       }
 
-      // 5. Update form with new data
+      // Update form with new data
       const updatedForm = await tx.form.update({
         where: { id: formId },
         data: {
-          isCompensated: body.isCompensated,
-          program: body.program,
-          month: body.month,
-          semester: body.semester,
-          year: body.year,
-          subjectId: body.subjectId,
-          subjectName: body.subjectName,
-          lectureId: body.lectureId ?? null,
-          labId: body.labId ?? null,
-          schedule: {
-            create: schedulesCreate,
+          isCompensated: body.form.isCompensated,
+          program: body.form.program,
+          month: body.form.month,
+          semester: body.form.semester,
+          year: body.form.year,
+          subjectId: body.form.subjectId,
+          subjectName: body.form.subjectName,
+          formScheduleDetails: {
+            create: formSectionsCreate,
           },
           compensation: compensationCreate,
         },
         include: {
-          schedule: {
-            orderBy: { date: "asc" },
+          formScheduleDetails: {
+            include: {
+              schedules: {
+                orderBy: { date: "asc" },
+              },
+            },
           },
           compensation: true,
           user: {
@@ -252,8 +274,12 @@ export const getFormById = async (req, res) => {
     const form = await prisma.form.findUnique({
       where: { id: formId },
       include: {
-        schedule: {
-          orderBy: { date: "asc" },
+        formScheduleDetails: {
+          include: {
+            schedules: {
+              orderBy: { date: "asc" },
+            },
+          },
         },
         compensation: true,
         user: {

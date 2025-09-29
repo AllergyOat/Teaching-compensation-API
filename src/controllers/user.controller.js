@@ -31,30 +31,32 @@ export const listMyForms = async (req, res, next) => {
         subjectName: true,
         program: true,
         section: true,
-        lectureId: true,
-        labId: true,
         month: true,
         semester: true,
         year: true,
         status: true,
         createdAt: true,
-        schedule: {
-          select: {
-            totalHour: true,
-            room: true,
-            date: true,
-            time: true,
-            topic: true,
-          },
-        },
+        formScheduleDetails: { select: { sectionId: true, schedules: true } },
       },
     });
 
     // Calculate total hour from all schedules
     const totalHour = forms.reduce((sum, form) => {
-      if (form.schedule && Array.isArray(form.schedule)) {
+      if (form.formScheduleDetails && Array.isArray(form.formScheduleDetails)) {
         return (
-          sum + form.schedule.reduce((s, sch) => s + (sch.totalHour || 0), 0)
+          sum +
+          form.formScheduleDetails.reduce((sectionSum, section) => {
+            if (section.schedules && Array.isArray(section.schedules)) {
+              return (
+                sectionSum +
+                section.schedules.reduce(
+                  (schedSum, sch) => schedSum + (sch.totalHour || 0),
+                  0
+                )
+              );
+            }
+            return sectionSum;
+          }, 0)
         );
       }
       return sum;

@@ -16,7 +16,7 @@ export const generateScheduleDocx = async (req, res) => {
   try {
     console.log("Generate Schedule DOCX request received");
 
-    const { formId } = req.params;
+    const { formId, sectionId } = req.params;
 
     if (!formId) {
       return res.status(400).json({
@@ -32,7 +32,11 @@ export const generateScheduleDocx = async (req, res) => {
         id: formId,
       },
       include: {
-        schedule: true,
+        formScheduleDetails: {
+          include: {
+            schedules: true,
+          },
+        },
       },
     });
 
@@ -69,7 +73,34 @@ export const generateScheduleDocx = async (req, res) => {
       linebreaks: true,
     });
 
-    // Prepare template data from form and schedules
+    // Find the specific section or use the first one if sectionId not provided
+    let targetSection = null;
+    let targetSchedules = [];
+    let targetSectionId = "";
+
+    if (form.formScheduleDetails && Array.isArray(form.formScheduleDetails)) {
+      if (sectionId) {
+        // Find specific section by sectionId
+        targetSection = form.formScheduleDetails.find(
+          (section) => section.sectionId === sectionId
+        );
+        if (!targetSection) {
+          return res.status(404).json({
+            error: "Section not found",
+            sectionId,
+          });
+        }
+      } else {
+        targetSection = form.formScheduleDetails[0];
+      }
+
+      if (targetSection) {
+        targetSchedules = targetSection.schedules || [];
+        targetSectionId = targetSection.sectionId;
+      }
+    }
+
+    // Prepare template data from form and target section schedules
     const templateData = {
       // Form data
       month: form.month || "",
@@ -77,23 +108,18 @@ export const generateScheduleDocx = async (req, res) => {
       semester: form.semester || "",
       year: form.year || "",
       subjectName: form.subjectName || "",
-      lectureId: form.lectureId || "",
-      labId: form.labId || "",
-      id: 1, // Fixed value as requested
+      lectureId: targetSection?.kind === "LECTURE" ? targetSectionId : "",
+      labId: targetSection?.kind === "LAB" ? targetSectionId : "",
+      id: 1,
 
-      // Schedule data (use first schedule if multiple exist)
       date:
-        form.schedule && form.schedule.length > 0
-          ? formatThaiDate(form.schedule[0].date)
+        targetSchedules.length > 0
+          ? formatThaiDate(targetSchedules[0].date)
           : "",
-      time:
-        form.schedule && form.schedule.length > 0 ? form.schedule[0].time : "",
-      topic:
-        form.schedule && form.schedule.length > 0 ? form.schedule[0].topic : "",
-      room:
-        form.schedule && form.schedule.length > 0 ? form.schedule[0].room : "",
-      note:
-        form.schedule && form.schedule.length > 0 ? form.schedule[0].note : "",
+      time: targetSchedules.length > 0 ? targetSchedules[0].time : "",
+      topic: targetSchedules.length > 0 ? targetSchedules[0].topic : "",
+      room: targetSchedules.length > 0 ? targetSchedules[0].room : "",
+      note: targetSchedules.length > 0 ? targetSchedules[0].note : "",
 
       // Additional formatting
       generatedDate: new Date().toLocaleDateString("th-TH", {
@@ -103,18 +129,20 @@ export const generateScheduleDocx = async (req, res) => {
       }),
       generatedDateTime: new Date().toLocaleString("th-TH"),
 
-      // Multiple schedules if needed (for templates that support arrays)
-      schedules: form.schedule
-        ? form.schedule.map((schedule, index) => ({
-            index: index + 1,
-            date: formatThaiDate(schedule.date) || "",
-            time: schedule.time || "",
-            topic: schedule.topic || "",
-            room: schedule.room || "",
-            note: schedule.note || "",
-          }))
-        : [],
-      scheduleCount: form.schedule ? form.schedule.length : 0,
+      // Multiple schedules from target section (for templates that support arrays)
+      schedules: targetSchedules.map((schedule, index) => ({
+        index: index + 1,
+        date: formatThaiDate(schedule.date) || "",
+        time: schedule.time || "",
+        topic: schedule.topic || "",
+        room: schedule.room || "",
+        note: schedule.note || "",
+      })),
+      scheduleCount: targetSchedules.length,
+
+      // Section information
+      sectionId: targetSectionId,
+      sectionKind: targetSection?.kind || "",
     };
 
     console.log("Template data prepared:", templateData);
@@ -519,7 +547,7 @@ export const generateEvidenceDocx = async (req, res) => {
   try {
     console.log("Generate Evidence DOCX request received");
 
-    const { formId } = req.params;
+    const { formId, sectionId } = req.params;
     const formData = req.body;
 
     if (!formId) {
@@ -535,7 +563,12 @@ export const generateEvidenceDocx = async (req, res) => {
       },
       include: {
         user: true,
-        schedule: true,
+        formScheduleDetails: {
+          where: sectionId ? { sectionId } : undefined,
+          include: {
+            schedules: true,
+          },
+        },
       },
     });
 
@@ -574,12 +607,24 @@ export const generateEvidenceDocx = async (req, res) => {
     const name = `${form.user.firstName || ""} ${
       form.user.lastName || ""
     }`.trim();
-    const totalHours = Array.isArray(form.schedule)
-      ? form.schedule.reduce(
-          (sum, s) => sum + (parseFloat(s.totalHour) || 0),
-          0
-        )
+
+    // Calculate total hours from all schedules in all formScheduleDetails
+    const totalHours = Array.isArray(form.formScheduleDetails)
+      ? form.formScheduleDetails.reduce((sum, section) => {
+          if (section.schedules && Array.isArray(section.schedules)) {
+            return (
+              sum +
+              section.schedules.reduce(
+                (schedSum, schedule) =>
+                  schedSum + (parseFloat(schedule.totalHour) || 0),
+                0
+              )
+            );
+          }
+          return sum;
+        }, 0)
       : 0;
+
     const amount = calculateAmount(totalHours, form.section) || "";
     const templateData = {
       major: form.user.major || "",
