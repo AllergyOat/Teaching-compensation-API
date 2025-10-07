@@ -62,20 +62,7 @@ export const createForm = async (req, res) => {
       });
     }
 
-    const compensationCreate =
-      body.form.isCompensated &&
-      body.compensation &&
-      body.compensation.length > 0
-        ? {
-            create: body.compensation.map((comp) => ({
-              previousDate: new Date(comp.previousDate),
-              previousTime: comp.previousTime,
-              newDate: new Date(comp.newDate),
-              newTime: comp.newTime,
-              reason: comp.reason,
-            })),
-          }
-        : undefined; // If not compensated, omit
+    const compensationCreate = undefined; // Compensation is now handled separately through FormSections
 
     // 4) Create with Prisma (include children back)
     const created = await prisma.form.create({
@@ -92,15 +79,14 @@ export const createForm = async (req, res) => {
         formScheduleDetails: {
           create: formSectionsCreate, // Create FormSections with nested Schedules
         },
-        compensation: compensationCreate, // optional
       },
       include: {
         formScheduleDetails: {
           include: {
             schedules: true,
+            compensation: true, // Include compensation through FormSections
           },
         },
-        compensation: true,
         user: {
           select: { id: true, firstName: true, lastName: true, email: true },
         },
@@ -111,6 +97,150 @@ export const createForm = async (req, res) => {
   } catch (err) {
     console.error("createForm error:", err);
     return res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+export const createCompensation = async (req, res) => {
+  try {
+    const {
+      formSectionId,
+      originalScheduleId,
+      originalDate,
+      originalTime,
+      newDate,
+      newTime,
+      reason,
+    } = req.body;
+
+    // Validate required fields
+    if (
+      !formSectionId ||
+      !originalDate ||
+      !originalTime ||
+      !newDate ||
+      !newTime ||
+      !reason
+    ) {
+      return res.status(400).json({
+        message: "Missing required fields",
+        required: [
+          "formSectionId",
+          "originalDate",
+          "originalTime",
+          "newDate",
+          "newTime",
+          "reason",
+        ],
+      });
+    }
+
+    // Check if formSection exists and get related form for permission check
+    const formSection = await prisma.formSections.findUnique({
+      where: { id: formSectionId },
+      include: {
+        form: {
+          include: {
+            user: true,
+          },
+        },
+        schedules: originalScheduleId
+          ? {
+              where: { id: originalScheduleId },
+            }
+          : false,
+      },
+    });
+
+    if (!formSection) {
+      return res.status(404).json({
+        message: "Form section not found",
+      });
+    }
+
+    // If originalScheduleId is provided, verify it exists in this form section
+    if (originalScheduleId) {
+      const schedule = await prisma.schedule.findFirst({
+        where: {
+          id: originalScheduleId,
+          formSectionId: formSectionId,
+        },
+      });
+
+      if (!schedule) {
+        return res.status(404).json({
+          message: "Original schedule not found in this form section",
+        });
+      }
+    }
+
+    // Check permissions - only owner or admin can create compensation
+    const currentUserId = req?.user?.id;
+    const isAdmin =
+      req?.user?.role === "MAJOR_ADMIN" || req?.user?.role === "SUPER_ADMIN";
+
+    if (formSection.form.userId !== currentUserId && !isAdmin) {
+      return res.status(403).json({
+        message:
+          "Forbidden: You can only create compensation for your own forms",
+      });
+    }
+
+    // Create compensation
+    const compensation = await prisma.compensation.create({
+      data: {
+        formSectionId,
+        originalScheduleId: originalScheduleId || null,
+        originalDate: new Date(originalDate),
+        originalTime,
+        newDate: new Date(newDate),
+        newTime,
+        reason,
+      },
+      include: {
+        formSection: {
+          include: {
+            form: {
+              select: {
+                id: true,
+                subjectName: true,
+                user: {
+                  select: {
+                    firstName: true,
+                    lastName: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+        originalSchedule: true, // Include the original schedule if referenced
+      },
+    });
+
+    return res.status(201).json({
+      message: "Compensation created successfully",
+      data: compensation,
+    });
+  } catch (error) {
+    console.error("createCompensation error:", error);
+
+    // Handle specific Prisma errors
+    if (error.code === "P2002") {
+      return res.status(409).json({
+        message: "Compensation already exists for this schedule",
+      });
+    }
+
+    if (error.code === "P2025") {
+      return res.status(404).json({
+        message: "Schedule not found",
+      });
+    }
+
+    return res.status(500).json({
+      message: "Internal Server Error",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
   }
 };
 
@@ -139,9 +269,9 @@ export const editForm = async (req, res) => {
         formScheduleDetails: {
           include: {
             schedules: true,
+            compensation: true, // Include compensation through FormSections
           },
         },
-        compensation: true,
         user: { select: { id: true, role: true } },
       },
     });
@@ -187,23 +317,7 @@ export const editForm = async (req, res) => {
         });
       }
 
-      // Prepare compensation data if needed
-      let compensationCreate = undefined;
-      if (
-        body.form.isCompensated &&
-        body.compensation &&
-        body.compensation.length > 0
-      ) {
-        compensationCreate = {
-          create: body.compensation.map((comp) => ({
-            previousDate: new Date(comp.previousDate),
-            previousTime: comp.previousTime,
-            newDate: new Date(comp.newDate),
-            newTime: comp.newTime,
-            reason: comp.reason,
-          })),
-        };
-      }
+      // Compensation is now handled separately - not created through form creation
 
       // Update form with new data
       const updatedForm = await tx.form.update({
@@ -219,7 +333,6 @@ export const editForm = async (req, res) => {
           formScheduleDetails: {
             create: formSectionsCreate,
           },
-          compensation: compensationCreate,
         },
         include: {
           formScheduleDetails: {
@@ -227,9 +340,9 @@ export const editForm = async (req, res) => {
               schedules: {
                 orderBy: { date: "asc" },
               },
+              compensation: true, // Include compensation through FormSections
             },
           },
-          compensation: true,
           user: {
             select: { id: true, firstName: true, lastName: true, email: true },
           },
@@ -266,6 +379,7 @@ export const editForm = async (req, res) => {
 export const getFormById = async (req, res) => {
   try {
     const formId = req.params.id;
+    const sectionId = req.params.sectionId;
 
     if (!formId) {
       return res.status(400).json({ message: "Form ID is required" });
@@ -275,13 +389,14 @@ export const getFormById = async (req, res) => {
       where: { id: formId },
       include: {
         formScheduleDetails: {
+          where: sectionId ? { sectionId } : undefined,
           include: {
             schedules: {
               orderBy: { date: "asc" },
             },
+            compensation: true,
           },
         },
-        compensation: true,
         user: {
           select: {
             id: true,

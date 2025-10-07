@@ -84,9 +84,14 @@ export const listMyForms = async (req, res, next) => {
 export const listMyFormsStatus = async (req, res, next) => {
   try {
     const userId = req.user.id;
-    const { month, year } = req.query;
+    const { program, month, year } = req.query;
 
     const where = { userId };
+
+    // Filter by program if provided
+    if (program) {
+      where.program = program;
+    }
 
     // Filter by month if provided
     if (month) {

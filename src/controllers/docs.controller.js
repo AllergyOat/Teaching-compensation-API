@@ -230,17 +230,21 @@ export const generateCompensationDocx = async (req, res) => {
 
     console.log("Fetching compensation data for ID:", compensationId);
 
-    // Fetch compensation data with related form and user data
     const compensation = await prisma.compensation.findUnique({
       where: {
         id: compensationId,
       },
       include: {
-        form: {
+        formSection: {
           include: {
-            user: true,
+            form: {
+              include: {
+                user: true,
+              },
+            },
           },
         },
+        originalSchedule: true, // Include the original schedule if referenced
       },
     });
 
@@ -251,7 +255,7 @@ export const generateCompensationDocx = async (req, res) => {
       });
     }
 
-    console.log("Compensation found:", compensation);
+    console.log("Compensation found:", JSON.stringify(compensation, null, 2));
 
     // Path to compensation template file
     const templatePath = path.join(
@@ -277,30 +281,75 @@ export const generateCompensationDocx = async (req, res) => {
       linebreaks: true,
     });
 
-    // Prepare template data from compensation, form, and user data
+    // Extract data from all related models
+    const formSection = compensation.formSection;
+    const form = formSection?.form;
+    const user = form?.user;
+    const originalSchedule = compensation.originalSchedule;
+
+    if (!formSection || !form || !user) {
+      return res.status(500).json({
+        error: "Incomplete data structure",
+        details: "Missing required relationships in compensation data",
+        debug: {
+          hasFormSection: !!formSection,
+          hasForm: !!form,
+          hasUser: !!user,
+          hasOriginalSchedule: !!originalSchedule,
+        },
+      });
+    }
+
     const templateData = {
       // Program data (mapped to Thai)
-      program: mapProgramToThai(compensation.form.program),
+      program: mapProgramToThai(form.program),
 
       // Date (use current date for generation date)
       date: formatThaiDate(new Date()),
 
       // User data
-      firstname: compensation.form.user.firstName || "",
-      lastname: compensation.form.user.lastName || "",
-      position: compensation.form.user.position || "",
-      department: compensation.form.user.department || "",
+      firstname: user.firstName || "",
+      lastname: user.lastName || "",
+      position: user.position || "",
+      department: user.department || "",
+      major: user.major || "",
+      faculty: user.faculty || "",
 
       // Form data
-      subjectName: compensation.form.subjectName || "",
-      lectureId: compensation.form.lectureId || "",
-      labId: compensation.form.labId || "",
+      subjectName: form.subjectName || "",
+      semester: form.semester || "",
+      year: form.year || "",
+      month: form.month || "",
+
+      // FormSection data
+      sectionId: formSection.sectionId || "",
+      lectureId: formSection.kind === "LECTURE" ? formSection.sectionId : "",
+      labId: formSection.kind === "LAB" ? formSection.sectionId : "",
+      sectionKind: formSection.kind || "",
+
+      // Original Schedule data (if available)
+      scheduleDate: originalSchedule
+        ? formatThaiDate(originalSchedule.date)
+        : formatThaiDate(compensation.originalDate),
+      scheduleTime: originalSchedule?.time || compensation.originalTime || "",
+      scheduleTopic: originalSchedule?.topic || "",
+      scheduleRoom: originalSchedule?.room || "",
+      scheduleNote: originalSchedule?.note || "",
+      scheduleTotalHour: originalSchedule?.totalHour || 0,
+
+      // Compensation data (new/changed)
+      newDate: formatThaiDate(compensation.newDate),
+      newTime: compensation.newTime || "",
+      reason: compensation.reason || "",
 
       // Compensation data as array for template loop
       compensation: [
         {
-          previousDate: formatThaiDate(compensation.previousDate),
-          previousTime: compensation.previousTime || "",
+          previousDate: originalSchedule
+            ? formatThaiDate(originalSchedule.date)
+            : formatThaiDate(compensation.originalDate),
+          previousTime:
+            originalSchedule?.time || compensation.originalTime || "",
           newDate: formatThaiDate(compensation.newDate),
           newTime: compensation.newTime || "",
           reason: compensation.reason || "",
@@ -308,11 +357,10 @@ export const generateCompensationDocx = async (req, res) => {
       ],
 
       // Individual compensation fields (for backward compatibility)
-      previousDate: formatThaiDate(compensation.previousDate),
-      previousTime: compensation.previousTime || "",
-      newDate: formatThaiDate(compensation.newDate),
-      newTime: compensation.newTime || "",
-      reason: compensation.reason || "",
+      previousDate: originalSchedule
+        ? formatThaiDate(originalSchedule.date)
+        : formatThaiDate(compensation.originalDate),
+      previousTime: originalSchedule?.time || compensation.originalTime || "",
 
       // Additional formatted fields
       generatedDate: formatThaiDate(new Date()),
@@ -345,15 +393,13 @@ export const generateCompensationDocx = async (req, res) => {
     // Generate filename with proper encoding
     const timestamp = Date.now();
     const userSlug =
-      compensation.form.user.firstName && compensation.form.user.lastName
-        ? `${compensation.form.user.firstName}_${compensation.form.user.lastName}`
+      user.firstName && user.lastName
+        ? `${user.firstName}_${user.lastName}`
             .replace(/[^\w\s-]/g, "")
             .replace(/\s+/g, "_")
         : "user";
-    const subjectSlug = compensation.form.subjectName
-      ? compensation.form.subjectName
-          .replace(/[^\w\s-]/g, "")
-          .replace(/\s+/g, "_")
+    const subjectSlug = form.subjectName
+      ? form.subjectName.replace(/[^\w\s-]/g, "").replace(/\s+/g, "_")
       : "subject";
     const filename = `memo_${compensation.id}_${userSlug}_${subjectSlug}_${timestamp}.docx`;
 

@@ -27,8 +27,13 @@ export const ListForms = async (req, res, next) => {
             faculty: true,
           },
         },
-        formScheduleDetails: { select: { sectionId: true, schedules: true } },
-        compensation: true,
+        formScheduleDetails: {
+          select: {
+            sectionId: true,
+            schedules: true,
+            compensation: true,
+          },
+        },
       },
     });
     res.json({ forms });
@@ -41,7 +46,7 @@ export const updateFormStatus = async (req, res, next) => {
   try {
     const formId = req.params.id;
     const { status, adminComment } = req.body;
-    
+
     const updatedForm = await prisma.form.update({
       where: { id: formId },
       data: { status, adminComment },
