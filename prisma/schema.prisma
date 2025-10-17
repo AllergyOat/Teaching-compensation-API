@@ -75,41 +75,52 @@ model Form {
   year          Int
   subjectId     String
   subjectName   String
-  lectureId     String?
-  labId         String?
   status        FormStatus @default(PENDING)
   adminComment  String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  schedule     Schedule[]
-  compensation Compensation[]
+  formScheduleDetails FormSections[]
 
   @@index([userId])
 }
 
-model Schedule {
+model FormSections {
   id        String   @id @default(cuid())
   formId    String
   form      Form     @relation(fields: [formId], references: [id], onDelete: Cascade)
-  date      DateTime
-  time      String
-  totalHour Int
-  topic     String
-  room      String
-  note      String?
+  sectionId String
+  kind      Section? @default(LECTURE)
+
+  schedules    Schedule[]
+  compensation Compensation[]
+}
+
+model Schedule {
+  id            String         @id @default(cuid())
+  formSectionId String
+  formSection   FormSections   @relation(fields: [formSectionId], references: [id], onDelete: Cascade)
+  date          DateTime
+  time          String
+  totalHour     Int
+  topic         String
+  room          String
+  note          String?
+  Compensation  Compensation[]
 }
 
 model Compensation {
-  id           String   @id @default(cuid())
-  formId       String
-  form         Form     @relation(fields: [formId], references: [id], onDelete: Cascade)
-  previousDate DateTime
-  previousTime String
-  newDate      DateTime
-  newTime      String
-  reason       String
+  id                 String       @id @default(cuid())
+  formSectionId      String
+  formSection        FormSections @relation(fields: [formSectionId], references: [id], onDelete: Cascade)
+  originalScheduleId String?      // คาบที่ชดเชย
+  originalSchedule   Schedule?    @relation(fields: [originalScheduleId], references: [id], onDelete: Cascade)
+  originalDate       DateTime
+  originalTime       String
+  newDate            DateTime
+  newTime            String
+  reason             String
 }
 
 enum UserRole {

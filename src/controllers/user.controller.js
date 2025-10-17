@@ -31,51 +31,120 @@ export const listMyForms = async (req, res, next) => {
         subjectName: true,
         program: true,
         section: true,
-        lectureId: true,
-        labId: true,
         month: true,
         semester: true,
         year: true,
         status: true,
         createdAt: true,
-        schedule: {
-          select: {
-            totalHour: true,
-            room: true,
-            date: true,
-            time: true,
-            topic: true,
-          },
-        },
+        formScheduleDetails: { select: { sectionId: true, schedules: true } },
       },
     });
 
     // Calculate total hour from all schedules
     const totalHour = forms.reduce((sum, form) => {
-      if (form.schedule && Array.isArray(form.schedule)) {
+      if (form.formScheduleDetails && Array.isArray(form.formScheduleDetails)) {
         return (
-          sum + form.schedule.reduce((s, sch) => s + (sch.totalHour || 0), 0)
+          sum +
+          form.formScheduleDetails.reduce((sectionSum, section) => {
+            if (section.schedules && Array.isArray(section.schedules)) {
+              return (
+                sectionSum +
+                section.schedules.reduce(
+                  (schedSum, sch) => schedSum + (sch.totalHour || 0),
+                  0
+                )
+              );
+            }
+            return sectionSum;
+          }, 0)
         );
       }
       return sum;
     }, 0);
 
-    // Month check
-    const monthsStatus = {};
-    forms.forEach((form) => {
-      if (form.month) {
-        monthsStatus[form.month] = true;
-      }
+    // Get user data
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        degree: true,
+        position: true,
+        department: true,
+        faculty: true,
+        major: true,
+        type: true,
+        teachingLevel: true,
+        createdAt: true,
+      },
     });
 
     res.json({
       total_forms: forms.length,
       totalHour,
-      months: monthsStatus,
+      user,
       forms,
     });
   } catch (err) {
     next(err);
+  }
+};
+
+export const listMyFormsStatus = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { program, month, year } = req.query;
+
+    const where = { userId };
+
+    // Filter by program if provided
+    if (program) {
+      where.program = program;
+    }
+
+    // Filter by month if provided
+    if (month) {
+      where.month = month;
+    }
+
+    // Filter by year if provided
+    if (year) {
+      where.year = parseInt(year);
+    }
+
+    // Get forms with specific fields
+    const forms = await prisma.form.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        subjectId: true,
+        subjectName: true,
+        createdAt: true,
+        status: true,
+        adminComment: true,
+      },
+    });
+
+    // Initialize status counts
+    const statusCounts = {
+      PENDING: 0,
+      APPROVED: 0,
+      REJECTED: 0,
+    };
+
+    // Count forms by status
+    forms.forEach((form) => {
+      statusCounts[form.status]++;
+    });
+
+    res.json({
+      statusCounts,
+      forms,
+    });
+  } catch (error) {
+    next(error);
   }
 };
 
@@ -85,6 +154,7 @@ export const getUserProfile = async (req, res, next) => {
     const user = await prisma.user.findUnique({
       where: { id: userId },
       select: {
+        id: true,
         firstName: true,
         lastName: true,
         degree: true,
@@ -139,4 +209,3 @@ export const updateUserProfile = async (req, res, next) => {
     next(err);
   }
 };
-

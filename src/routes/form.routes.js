@@ -4,26 +4,32 @@ import {
   editForm,
   getFormById,
   deleteForm,
+  createCompensation,
 } from "../controllers/form.controller.js";
 import {
-  generateCompensationDocx,
-  generateDocx,
   generateScheduleDocx,
+  generateDocx,
+  generateEvidenceDocx,
+  generateCompensationDocx,
 } from "../controllers/docs.controller.js";
-import { requireAuth } from "../middlewares/auth.js";
+import { requireAuth, permit } from "../middlewares/auth.js";
 
 const router = Router();
 
 router.post("/create-form", requireAuth, createForm);
-router.get("/:id", requireAuth, getFormById);
-router.put("/edit-form/:id", requireAuth, editForm);
-router.delete("/:id", requireAuth, deleteForm);
+router.post("/create-compensation", requireAuth, createCompensation);
 
 // INPUT SECTION
-router.get("/:formId/generate-report", requireAuth, generateScheduleDocx);
+router.get("/:formId/:sectionId/generate-report", requireAuth, generateScheduleDocx);
 router.get("/:compensationId/generate-compensation", requireAuth, generateCompensationDocx);
 
 // OUTPUT SECTION
-router.post("/generate-docx", requireAuth, generateDocx);
+router.post("/generate-docx", requireAuth, permit("MAJOR_ADMIN"), generateDocx);
+router.post("/:formId/:sectionId/generate-evidence", requireAuth, permit("MAJOR_ADMIN"), generateEvidenceDocx);
+
+router.get("/:id", requireAuth, getFormById);
+router.get("/:id/:sectionId", requireAuth, getFormById);
+router.put("/edit-form/:id", requireAuth, editForm);
+router.delete("/:id", requireAuth, deleteForm);
 
 export default router;

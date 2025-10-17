@@ -1,5 +1,4 @@
 import prisma from "../config/prisma.js";
-import { formSchema } from "../schemas/form.schemas.js";
 
 export const listUsers = async (req, res, next) => {
   try {
@@ -28,10 +27,13 @@ export const ListForms = async (req, res, next) => {
             faculty: true,
           },
         },
-        schedule: {
-          orderBy: { date: "asc" },
+        formScheduleDetails: {
+          select: {
+            sectionId: true,
+            schedules: true,
+            compensation: true,
+          },
         },
-        compensation: true,
       },
     });
     res.json({ forms });
@@ -44,7 +46,7 @@ export const updateFormStatus = async (req, res, next) => {
   try {
     const formId = req.params.id;
     const { status, adminComment } = req.body;
-    
+
     const updatedForm = await prisma.form.update({
       where: { id: formId },
       data: { status, adminComment },
@@ -52,7 +54,7 @@ export const updateFormStatus = async (req, res, next) => {
         user: {
           select: { id: true, firstName: true, lastName: true, email: true },
         },
-        schedule: true,
+        formScheduleDetails: { select: { sectionId: true, schedules: true } },
         compensation: true,
       },
     });
