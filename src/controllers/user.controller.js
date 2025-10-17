@@ -62,18 +62,28 @@ export const listMyForms = async (req, res, next) => {
       return sum;
     }, 0);
 
-    // Month check
-    const monthsStatus = {};
-    forms.forEach((form) => {
-      if (form.month) {
-        monthsStatus[form.month] = true;
-      }
+    // Get user data
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        degree: true,
+        position: true,
+        department: true,
+        faculty: true,
+        major: true,
+        type: true,
+        teachingLevel: true,
+        createdAt: true,
+      },
     });
 
     res.json({
       total_forms: forms.length,
       totalHour,
-      months: monthsStatus,
+      user,
       forms,
     });
   } catch (err) {
@@ -144,6 +154,7 @@ export const getUserProfile = async (req, res, next) => {
     const user = await prisma.user.findUnique({
       where: { id: userId },
       select: {
+        id: true,
         firstName: true,
         lastName: true,
         degree: true,
