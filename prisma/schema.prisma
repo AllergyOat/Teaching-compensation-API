@@ -103,7 +103,7 @@ model Schedule {
   formSection   FormSections   @relation(fields: [formSectionId], references: [id], onDelete: Cascade)
   date          DateTime
   time          String
-  totalHour     Int
+  totalHour     Float
   topic         String
   room          String
   note          String?

@@ -1,5 +1,6 @@
 import prisma from "../config/prisma.js";
 import { formSchema } from "../schemas/form.schemas.js";
+import { calculateTotalHours } from "../utils/calculater.js";
 
 export const createForm = async (req, res) => {
   try {
@@ -42,14 +43,17 @@ export const createForm = async (req, res) => {
     if (body.formScheduleDetails && Array.isArray(body.formScheduleDetails)) {
       body.formScheduleDetails.forEach((detail) => {
         if (detail.schedules && Array.isArray(detail.schedules)) {
-          const schedulesForSection = detail.schedules.map((s) => ({
-            date: new Date(s.date), // convert to Date
-            time: s.time,
-            totalHour: s.totalHour,
-            topic: s.topic,
-            room: s.room,
-            note: s.note ?? null,
-          }));
+          const schedulesForSection = detail.schedules.map((s) => {
+            const totalHour = calculateTotalHours(s.time);
+            return {
+              date: new Date(s.date), // convert to Date
+              time: s.time,
+              totalHour,
+              topic: s.topic,
+              room: s.room,
+              note: s.note ?? null,
+            };
+          });
 
           formSectionsCreate.push({
             sectionId: detail.lectureId,
@@ -61,8 +65,6 @@ export const createForm = async (req, res) => {
         }
       });
     }
-
-    const compensationCreate = undefined; // Compensation is now handled separately through FormSections
 
     // 4) Create with Prisma (include children back)
     const created = await prisma.form.create({

@@ -33,7 +33,7 @@ export const formSchema = z.object({
             z.object({
               date: z.string().min(1), // ISO date string expected; will convert to Date
               time: z.string().min(1), // e.g., "09:00-11:00"
-              totalHour: z.number().int().positive(),
+              
               topic: z.string().min(1),
               room: z.string().min(1),
               note: z.string().optional().nullable(),

@@ -5,7 +5,7 @@ import Docxtemplater from "docxtemplater";
 import prisma from "../config/prisma.js";
 import { fileURLToPath } from "url";
 import { formatThaiDate, mapProgramToThai } from "../utils/formatToThai.js";
-import { calculateAmount } from "../utils/calculateAmount.js";
+import { calculateAmount } from "../utils/calculater.js";
 import ThaiBahtText from "thai-baht-text";
 
 const __filename = fileURLToPath(import.meta.url);
