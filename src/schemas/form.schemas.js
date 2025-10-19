@@ -28,12 +28,13 @@ export const formSchema = z.object({
     .array(
       z.object({
         lectureId: z.string().min(1),
+        kind: z.enum(["LECTURE", "LAB"]).default("LECTURE"), // Add kind field
         schedules: z
           .array(
             z.object({
               date: z.string().min(1), // ISO date string expected; will convert to Date
               time: z.string().min(1), // e.g., "09:00-11:00"
-              
+              totalHour: z.number().optional(), // Optional since it's calculated from time
               topic: z.string().min(1),
               room: z.string().min(1),
               note: z.string().optional().nullable(),

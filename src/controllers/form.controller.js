@@ -57,7 +57,7 @@ export const createForm = async (req, res) => {
 
           formSectionsCreate.push({
             sectionId: detail.lectureId,
-            kind: body.form.section === "LECTURE" ? "LECTURE" : "LAB",
+            kind: detail.kind || "LECTURE", // Use kind from request body with fallback
             schedules: {
               create: schedulesForSection,
             },
@@ -310,7 +310,7 @@ export const editForm = async (req, res) => {
 
             formSectionsCreate.push({
               sectionId: detail.lectureId,
-              kind: body.form.section === "LECTURE" ? "LECTURE" : "LAB",
+              kind: detail.kind || "LECTURE", // Use kind from request body with fallback
               schedules: {
                 create: schedulesForSection,
               },
