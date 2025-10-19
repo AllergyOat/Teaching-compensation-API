@@ -296,18 +296,26 @@ export const editForm = async (req, res) => {
 
     // Use transaction for atomic updates
     const updated = await prisma.$transaction(async (tx) => {
+      // First, delete existing formScheduleDetails to avoid conflicts
+      await tx.formSections.deleteMany({
+        where: { formId: formId },
+      });
+
       const formSectionsCreate = [];
       if (body.formScheduleDetails && Array.isArray(body.formScheduleDetails)) {
         body.formScheduleDetails.forEach((detail) => {
           if (detail.schedules && Array.isArray(detail.schedules)) {
-            const schedulesForSection = detail.schedules.map((s) => ({
-              date: new Date(s.date),
-              time: s.time,
-              totalHour: s.totalHour,
-              topic: s.topic,
-              room: s.room,
-              note: s.note ?? null,
-            }));
+            const schedulesForSection = detail.schedules.map((s) => {
+              const totalHour = calculateTotalHours(s.time);
+              return {
+                date: new Date(s.date), // convert to Date
+                time: s.time,
+                totalHour,
+                topic: s.topic,
+                room: s.room,
+                note: s.note ?? null,
+              };
+            });
 
             formSectionsCreate.push({
               sectionId: detail.lectureId,
@@ -320,14 +328,13 @@ export const editForm = async (req, res) => {
         });
       }
 
-      // Compensation is now handled separately - not created through form creation
-
       // Update form with new data
       const updatedForm = await tx.form.update({
         where: { id: formId },
         data: {
           isCompensated: body.form.isCompensated,
           program: body.form.program,
+          section: body.form.section, // Add missing section field
           month: body.form.month,
           semester: body.form.semester,
           year: body.form.year,

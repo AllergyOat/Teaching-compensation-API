@@ -40,27 +40,28 @@ export const listMyForms = async (req, res, next) => {
       },
     });
 
-    // Calculate total hour from all schedules
-    const totalHour = forms.reduce((sum, form) => {
-      if (form.formScheduleDetails && Array.isArray(form.formScheduleDetails)) {
-        return (
-          sum +
-          form.formScheduleDetails.reduce((sectionSum, section) => {
-            if (section.schedules && Array.isArray(section.schedules)) {
-              return (
-                sectionSum +
-                section.schedules.reduce(
-                  (schedSum, sch) => schedSum + (sch.totalHour || 0),
-                  0
-                )
-              );
-            }
-            return sectionSum;
-          }, 0)
-        );
-      }
-      return sum;
-    }, 0);
+    // helper to sum all schedule hours
+    const sumSchedules = (schedules) =>
+      (schedules ?? []).reduce((sum, sch) => sum + (sch.totalHour || 0), 0);
+
+    // initialize accumulators
+    let totalHour = 0;
+    let totalLectureHours = 0;
+    let totalLabHours = 0;
+
+    for (const form of forms) {
+      // sum hours for this form
+      const formTotal = form.formScheduleDetails.reduce(
+        (sum, section) => sum + sumSchedules(section.schedules),
+        0
+      );
+
+      totalHour += formTotal;
+
+      // separate totals by form.section
+      if (form.section === "LECTURE") totalLectureHours += formTotal;
+      if (form.section === "LAB") totalLabHours += formTotal;
+    }
 
     // Get user data
     const user = await prisma.user.findUnique({
@@ -83,6 +84,8 @@ export const listMyForms = async (req, res, next) => {
     res.json({
       total_forms: forms.length,
       totalHour,
+      totalLectureHours,
+      totalLabHours,
       user,
       forms,
     });
