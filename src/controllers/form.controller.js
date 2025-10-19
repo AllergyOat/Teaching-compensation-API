@@ -72,6 +72,7 @@ export const createForm = async (req, res) => {
         userId,
         isCompensated: body.form.isCompensated,
         program: body.form.program,
+        section: body.form.section,
         month: body.form.month,
         semester: body.form.semester,
         year: body.form.year,
