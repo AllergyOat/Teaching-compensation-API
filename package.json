@@ -21,6 +21,7 @@
     "express": "^5.1.0",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.2",
+    "libreoffice-convert": "^1.7.0",
     "nodemailer": "^7.0.6",
     "pizzip": "^3.2.0",
     "thai-baht-text": "^2.0.5",

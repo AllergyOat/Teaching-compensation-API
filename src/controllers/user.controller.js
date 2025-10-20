@@ -36,7 +36,7 @@ export const listMyForms = async (req, res, next) => {
         year: true,
         status: true,
         createdAt: true,
-        formScheduleDetails: { select: { sectionId: true, schedules: true } },
+        formScheduleDetails: { select: { sectionId: true, schedules: true, compensation: true } },
       },
     });
 

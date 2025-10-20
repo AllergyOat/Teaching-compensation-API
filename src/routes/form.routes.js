@@ -21,6 +21,7 @@ router.post("/create-compensation", requireAuth, createCompensation);
 
 // INPUT SECTION
 router.get("/:formId/:sectionId/generate-report", requireAuth, generateScheduleDocx);
+// router.get("/:formId/:sectionId/generate-report/:format", requireAuth, generateScheduleDocx);
 router.get("/:compensationId/generate-compensation", requireAuth, generateCompensationDocx);
 
 // OUTPUT SECTION

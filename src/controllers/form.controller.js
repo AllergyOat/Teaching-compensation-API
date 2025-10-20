@@ -12,12 +12,8 @@ export const createForm = async (req, res) => {
     }
     const body = parsed.data;
 
-    console.log("req.user:", req.user);
-    console.log("body.userId:", body.userId);
-
     // Prefer the authenticated user from token; allow admin to specify in body if provided
     const userId = body.userId ?? req?.user?.id;
-    console.log("Final userId:", userId);
 
     if (!userId) {
       console.error(
@@ -95,6 +91,59 @@ export const createForm = async (req, res) => {
         },
       },
     });
+
+    // Optional: Create compensation if provided in formScheduleDetails
+    if (body.formScheduleDetails && Array.isArray(body.formScheduleDetails)) {
+      const compensationPromises = [];
+
+      body.formScheduleDetails.forEach((detail) => {
+        if (detail.compensation && Array.isArray(detail.compensation)) {
+          // Find the corresponding created form section
+          const createdSection = created.formScheduleDetails.find(
+            (section) => section.sectionId === detail.lectureId
+          );
+
+          if (createdSection) {
+            detail.compensation.forEach((comp) => {
+              // Validate required compensation fields
+              if (
+                comp.originalDate &&
+                comp.originalTime &&
+                comp.newDate &&
+                comp.newTime &&
+                comp.reason
+              ) {
+                compensationPromises.push(
+                  prisma.compensation
+                    .create({
+                      data: {
+                        formSectionId: createdSection.id,
+                        originalScheduleId: comp.originalScheduleId || null,
+                        originalDate: new Date(comp.originalDate),
+                        originalTime: comp.originalTime,
+                        newDate: new Date(comp.newDate),
+                        newTime: comp.newTime,
+                        reason: comp.reason,
+                      },
+                      include: {
+                        formSection: true,
+                        originalSchedule: true,
+                      },
+                    })
+                    .catch((error) => {
+                      console.error(
+                        `Error creating compensation for section ${detail.lectureId}:`,
+                        error
+                      );
+                      return null;
+                    })
+                );
+              }
+            });
+          }
+        }
+      });
+    }
 
     return res.status(201).json({ data: created });
   } catch (err) {
@@ -362,7 +411,6 @@ export const editForm = async (req, res) => {
       return updatedForm;
     });
 
-    console.log("Form updated successfully:", updated.id);
     return res.status(200).json({
       message: "Form updated successfully",
       data: updated,
@@ -487,7 +535,6 @@ export const deleteForm = async (req, res) => {
       where: { id: formId },
     });
 
-    console.log("Form deleted successfully:", formId);
     return res.status(200).json({
       message: "Form deleted successfully",
       deletedFormId: formId,

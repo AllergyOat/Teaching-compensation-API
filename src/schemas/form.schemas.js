@@ -41,21 +41,23 @@ export const formSchema = z.object({
             })
           )
           .min(1, "At least one schedule is required per section"),
+        
+        // Optional compensation array for this specific section
+        compensation: z
+          .array(
+            z.object({
+              originalDate: z.string().min(1),
+              originalTime: z.string().min(1),
+              newDate: z.string().min(1),
+              newTime: z.string().min(1),
+              reason: z.string().min(1),
+              originalScheduleId: z.string().optional().nullable(),
+            })
+          )
+          .optional(),
       })
     )
     .min(1, "At least one form schedule detail is required"),
-
-  compensation: z
-    .array(
-      z.object({
-        previousDate: z.string().min(1),
-        previousTime: z.string().min(1),
-        newDate: z.string().min(1),
-        newTime: z.string().min(1),
-        reason: z.string().min(1),
-      })
-    )
-    .optional(),
 });
 
 export const updateStatusSchema = z.object({
