@@ -42,6 +42,80 @@ export const ListForms = async (req, res, next) => {
   }
 };
 
+export const listHome = async (req, res, next) => {
+  try {
+    const search = req.query.search || "";
+    const { month, year, program } = req.query;
+
+    // Build form filters
+    const formWhere = {};
+
+    if (month) {
+      formWhere.month = month;
+    }
+
+    if (year) {
+      formWhere.year = parseInt(year);
+    }
+
+    if (program) {
+      formWhere.program = program;
+    }
+
+    // Build search filter for user names
+    const userWhere = {};
+    if (search) {
+      userWhere.OR = [
+        { firstName: { contains: search, mode: "insensitive" } },
+        { lastName: { contains: search, mode: "insensitive" } },
+        { major: { contains: search, mode: "insensitive" } },
+      ];
+    }
+
+    // Get users with their forms
+    const usersWithForms = await prisma.user.findMany({
+      orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
+      where: {
+        ...userWhere,
+        forms: {
+          some: formWhere, // Only include users who have at least one form matching the filters
+        },
+      },
+      include: {
+        forms: {
+          where: formWhere, // Apply the same filters to the forms
+          orderBy: { createdAt: "desc" },
+          include: {
+            formScheduleDetails: {
+              select: {
+                sectionId: true,
+                // schedules: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    // Transform the data to group forms by user
+    const formsGroupedByUser = usersWithForms.map((user) => ({
+      userId: user.id,
+      userName: `${user.firstName} ${user.lastName}`,
+      userInfo: {
+        id: user.id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        major: user.major,
+      },
+      forms: user.forms,
+    }));
+
+    res.json({ usersWithForms: formsGroupedByUser });
+  } catch (err) {
+    next(err);
+  }
+};
+
 export const updateFormStatus = async (req, res, next) => {
   try {
     const formId = req.params.id;
