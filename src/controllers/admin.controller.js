@@ -44,8 +44,9 @@ export const ListForms = async (req, res, next) => {
 
 export const listHome = async (req, res, next) => {
   try {
+    const userId = req.user.id;
     const search = req.query.search || "";
-    const { month, year, program } = req.query;
+    const { month, year, program, status } = req.query;
 
     // Build form filters
     const formWhere = {};
@@ -56,6 +57,10 @@ export const listHome = async (req, res, next) => {
 
     if (year) {
       formWhere.year = parseInt(year);
+    }
+
+    if (status) {
+      formWhere.status = status;
     }
 
     if (program) {
@@ -133,12 +138,22 @@ export const listHome = async (req, res, next) => {
       });
     });
 
+    const currentAdmin = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        firstName: true,
+        lastName: true,
+        role: true,
+        major: true,
+      },
+    });
+
     res.json({
       myInformation: {
-        firstName: req?.user?.firstName || null,
-        lastName: req?.user?.lastName || null,
-        role: req?.user?.role || null,
-        major: req?.user?.major || null,
+        firstName: currentAdmin?.firstName || null,
+        lastName: currentAdmin?.lastName || null,
+        role: currentAdmin?.role || null,
+        major: currentAdmin?.major || null,
       },
       statistics: {
         totalForms,
