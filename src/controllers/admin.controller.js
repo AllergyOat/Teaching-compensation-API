@@ -134,6 +134,12 @@ export const listHome = async (req, res, next) => {
     });
 
     res.json({
+      myInformation: {
+        firstName: req?.user?.firstName || null,
+        lastName: req?.user?.lastName || null,
+        role: req?.user?.role || null,
+        major: req?.user?.major || null,
+      },
       statistics: {
         totalForms,
         totalPending,
