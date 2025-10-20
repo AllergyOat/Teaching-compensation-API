@@ -110,7 +110,38 @@ export const listHome = async (req, res, next) => {
       forms: user.forms,
     }));
 
-    res.json({ usersWithForms: formsGroupedByUser });
+    // Calculate statistics
+    let totalForms = 0;
+    let totalPending = 0;
+    let totalApproved = 0;
+    let totalRejected = 0;
+
+    formsGroupedByUser.forEach((user) => {
+      user.forms.forEach((form) => {
+        totalForms++;
+        switch (form.status) {
+          case "PENDING":
+            totalPending++;
+            break;
+          case "APPROVED":
+            totalApproved++;
+            break;
+          case "REJECTED":
+            totalRejected++;
+            break;
+        }
+      });
+    });
+
+    res.json({
+      statistics: {
+        totalForms,
+        totalPending,
+        totalApproved,
+        totalRejected,
+      },
+      usersWithForms: formsGroupedByUser,
+    });
   } catch (err) {
     next(err);
   }
