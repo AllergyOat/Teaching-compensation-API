@@ -210,7 +210,6 @@ export const updateFormStatus = async (req, res, next) => {
           select: { id: true, firstName: true, lastName: true, email: true },
         },
         formScheduleDetails: { select: { sectionId: true, schedules: true } },
-        compensation: true,
       },
     });
     res.json({ message: "Form status updated", form: updatedForm });
