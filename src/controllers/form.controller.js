@@ -504,6 +504,14 @@ export const getFormById = async (req, res) => {
         }),
       };
 
+      // Calculate Total Hour Amount
+      const totalHourAmount = calculatedData.formScheduleDetails.reduce(
+        (sum, section) => {
+          return sum + (section.totalHours || 0);
+        },
+        0
+      );
+
       // Calculate grand total
       const grandTotal = calculatedData.formScheduleDetails.reduce(
         (sum, section) => {
@@ -512,6 +520,7 @@ export const getFormById = async (req, res) => {
         0
       );
 
+      calculatedData.totalHourAmount = totalHourAmount;
       calculatedData.grandTotal = grandTotal;
 
       return res.status(200).json({

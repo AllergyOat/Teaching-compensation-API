@@ -202,17 +202,11 @@ export const updateFormStatus = async (req, res, next) => {
     const formId = req.params.id;
     const { status, adminComment } = req.body;
 
-    const updatedForm = await prisma.form.update({
+    await prisma.form.update({
       where: { id: formId },
       data: { status, adminComment },
-      include: {
-        user: {
-          select: { id: true, firstName: true, lastName: true, email: true },
-        },
-        formScheduleDetails: { select: { sectionId: true, schedules: true } },
-      },
     });
-    res.json({ message: "Form status updated", form: updatedForm });
+    res.json({ message: "Form status updated" });
   } catch (err) {
     next(err);
   }
