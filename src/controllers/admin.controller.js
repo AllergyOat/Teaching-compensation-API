@@ -2,9 +2,38 @@ import prisma from "../config/prisma.js";
 
 export const listUsers = async (req, res, next) => {
   try {
+    const currentUserId = req.user.id;
+    const search = req.query.search || "";
+
+    // Build where clause
+    const whereClause = {
+      id: {
+        not: currentUserId,
+      },
+    };
+
+    // Add search filter if provided
+    if (search) {
+      whereClause.OR = [
+        { firstName: { contains: search, mode: "insensitive" } },
+        { lastName: { contains: search, mode: "insensitive" } },
+      ];
+    }
+
     const users = await prisma.user.findMany({
       orderBy: { createdAt: "desc" },
-      select: { id: true, email: true, role: true, createdAt: true },
+      where: whereClause,
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        degree: true,
+        position: true,
+        department: true,
+        faculty: true,
+        major: true,
+        createdAt: true,
+      },
     });
     res.json({ users });
   } catch (err) {
