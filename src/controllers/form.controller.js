@@ -1,6 +1,6 @@
 import prisma from "../config/prisma.js";
 import { formSchema } from "../schemas/form.schemas.js";
-import { calculateTotalHours } from "../utils/calculater.js";
+import { calculateTotalHours, calculateAmount } from "../utils/calculater.js";
 
 export const createForm = async (req, res) => {
   try {
@@ -480,6 +480,43 @@ export const getFormById = async (req, res) => {
     if (form.userId !== currentUserId && !isAdmin) {
       return res.status(403).json({
         message: "Forbidden: You can only view your own forms",
+      });
+    }
+
+    if (isAdmin) {
+      // Calculate amounts for each section and total for admin
+      const calculatedData = {
+        ...form,
+        formScheduleDetails: form.formScheduleDetails.map((section) => {
+          // Calculate total hours for this section
+          const totalHours = section.schedules.reduce((sum, schedule) => {
+            return sum + (schedule.totalHour || 0);
+          }, 0);
+
+          // Calculate amount based on form.section (not section.kind)
+          const amount = calculateAmount(totalHours, form.section);
+
+          return {
+            ...section,
+            totalHours,
+            amount,
+          };
+        }),
+      };
+
+      // Calculate grand total
+      const grandTotal = calculatedData.formScheduleDetails.reduce(
+        (sum, section) => {
+          return sum + (section.amount || 0);
+        },
+        0
+      );
+
+      calculatedData.grandTotal = grandTotal;
+
+      return res.status(200).json({
+        message: "Form retrieved successfully",
+        data: calculatedData,
       });
     }
 
