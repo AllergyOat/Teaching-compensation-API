@@ -1,3 +1,4 @@
+import { fi } from "zod/v4/locales";
 import prisma from "../config/prisma.js";
 import { calculateAmount } from "../utils/calculater.js";
 
@@ -219,6 +220,14 @@ export const userDashboard = async (req, res, next) => {
     const userId = req.params.id;
     const { program, month, section } = req.query;
 
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
     // Build where clause with filters
     const whereClause = {
       userId: userId,
@@ -420,6 +429,12 @@ export const userDashboard = async (req, res, next) => {
     res.json({
       forms: formsWithAmounts,
       summary: {
+        user: {
+          firstName: user.firstName,
+          lastName: user.lastName,
+          department: user.department,
+          major: user.major,
+        },
         lecture: {
           totalHours: lectureHours,
           totalAmount: lectureAmount,
