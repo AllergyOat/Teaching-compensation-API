@@ -11,7 +11,7 @@ router.get('/forms', requireAuth, permit('MAJOR_ADMIN'), listForms);
 router.get('/home', requireAuth, listHome);
 router.get('/forms/:id', requireAuth, getFormById);
 router.get('/users', requireAuth, listUsers);
-router.get('/users-dashboard/:id', requireAuth, permit('MAJOR_ADMIN'), userDashboard);
+router.get('/users-dashboard/:year/:id', requireAuth, permit('MAJOR_ADMIN'), userDashboard);
 router.put('/forms/:id/status', requireAuth, permit('MAJOR_ADMIN'), validate(updateStatusSchema), updateFormStatus);
 
 export default router;

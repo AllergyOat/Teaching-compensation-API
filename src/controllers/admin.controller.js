@@ -215,9 +215,30 @@ export const updateFormStatus = async (req, res, next) => {
 
 export const userDashboard = async (req, res, next) => {
   try {
+    const year = req.params.year;
     const userId = req.params.id;
+    const { program, month, section } = req.query;
+
+    // Build where clause with filters
+    const whereClause = {
+      userId: userId,
+      status: "APPROVED",
+      year: parseInt(year),
+    };
+
+    // Add optional filters
+    if (program) {
+      whereClause.program = program;
+    }
+    if (month) {
+      whereClause.month = month;
+    }
+    if (section) {
+      whereClause.section = section;
+    }
+
     const forms = await prisma.form.findMany({
-      where: { userId: userId, status: "APPROVED" },
+      where: whereClause,
       orderBy: { createdAt: "desc" },
       include: {
         formScheduleDetails: {
