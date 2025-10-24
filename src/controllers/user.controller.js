@@ -1,4 +1,5 @@
 import prisma from "../config/prisma.js";
+import { calculateAmount } from "../utils/calculater.js";
 
 export const listMyForms = async (req, res, next) => {
   try {
@@ -36,7 +37,9 @@ export const listMyForms = async (req, res, next) => {
         year: true,
         status: true,
         createdAt: true,
-        formScheduleDetails: { select: { sectionId: true, schedules: true, compensation: true } },
+        formScheduleDetails: {
+          select: { sectionId: true, schedules: true, compensation: true },
+        },
       },
     });
 
@@ -48,6 +51,8 @@ export const listMyForms = async (req, res, next) => {
     let totalHour = 0;
     let totalLectureHours = 0;
     let totalLabHours = 0;
+    let lectureAmount = 0;
+    let labAmount = 0;
 
     for (const form of forms) {
       // sum hours for this form
@@ -61,6 +66,16 @@ export const listMyForms = async (req, res, next) => {
       // separate totals by form.section
       if (form.section === "LECTURE") totalLectureHours += formTotal;
       if (form.section === "LAB") totalLabHours += formTotal;
+
+      // Calculate amount only for APPROVED forms
+      if (form.status === "APPROVED") {
+        const amount = calculateAmount(formTotal, form.section);
+        if (form.section === "LECTURE") {
+          lectureAmount += amount;
+        } else if (form.section === "LAB") {
+          labAmount += amount;
+        }
+      }
     }
 
     // Get user data
@@ -86,6 +101,10 @@ export const listMyForms = async (req, res, next) => {
       totalHour,
       totalLectureHours,
       totalLabHours,
+      totalAmount: {
+        labAmount,
+        lectureAmount,
+      },
       user,
       forms,
     });
