@@ -186,6 +186,7 @@ export const getUserProfile = async (req, res, next) => {
         major: true,
         type: true,
         teachingLevel: true,
+        email: true,
         createdAt: true,
       },
     });
