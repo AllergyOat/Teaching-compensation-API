@@ -35,6 +35,17 @@ export const createForm = async (req, res) => {
     // create data - handle new nested structure for FormSections and Schedules
     const formSectionsCreate = [];
 
+    // Check if there's any compensation data
+    let hasCompensation = false;
+    if (body.formScheduleDetails && Array.isArray(body.formScheduleDetails)) {
+      hasCompensation = body.formScheduleDetails.some(
+        (detail) =>
+          detail.compensation &&
+          Array.isArray(detail.compensation) &&
+          detail.compensation.length > 0
+      );
+    }
+
     // Process formScheduleDetails to create FormSections with nested Schedules
     if (body.formScheduleDetails && Array.isArray(body.formScheduleDetails)) {
       body.formScheduleDetails.forEach((detail) => {
@@ -66,7 +77,7 @@ export const createForm = async (req, res) => {
     const created = await prisma.form.create({
       data: {
         userId,
-        isCompensated: body.form.isCompensated,
+        isCompensated: hasCompensation,
         program: body.form.program,
         section: body.form.section,
         month: body.form.month,
@@ -410,6 +421,8 @@ export const editForm = async (req, res) => {
           year: body.form.year,
           subjectId: body.form.subjectId,
           subjectName: body.form.subjectName,
+          status: "PENDING",
+          adminComment: null,
           formScheduleDetails: {
             create: formSectionsCreate,
           },
