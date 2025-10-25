@@ -756,11 +756,11 @@ export const generateDocx = async (req, res) => {
       // Combined total (hours + compensation hours)
       th: totalHours + totalCompensationHours,
       // m1: rate per hour by section kind (LAB=300, else 600)
-      m1: targetSection.kind === "LAB" ? 300 : 600,
+      m1: form.section === "LAB" ? 300 : 600,
       // m2: total payment in Thai Baht text (th * m1)
       m2:
         (totalHours + totalCompensationHours) *
-        (targetSection.kind === "LAB" ? 300 : 600),
+        (form.section === "LAB" ? 300 : 600),
     };
 
     console.log("Template data prepared:", templateData);
@@ -856,6 +856,7 @@ export const generateEvidenceDocx = async (req, res) => {
           where: sectionId ? { sectionId } : undefined,
           include: {
             schedules: true,
+            compensation: true,
           },
         },
       },
@@ -898,7 +899,7 @@ export const generateEvidenceDocx = async (req, res) => {
     }`.trim();
 
     // Calculate total hours from schedules in the target section
-    const totalHours = Array.isArray(form.formScheduleDetails)
+    const totalScheduleHours = Array.isArray(form.formScheduleDetails)
       ? form.formScheduleDetails.reduce((sum, section) => {
           if (section.schedules && Array.isArray(section.schedules)) {
             return (
@@ -914,11 +915,30 @@ export const generateEvidenceDocx = async (req, res) => {
         }, 0)
       : 0;
 
+    // Calculate total compensation hours
+    const totalCompensationHours = Array.isArray(form.formScheduleDetails)
+      ? form.formScheduleDetails.reduce((sum, section) => {
+          if (section.compensation && Array.isArray(section.compensation)) {
+            return (
+              sum +
+              section.compensation.reduce(
+                (compSum, comp) => compSum + calculateTotalHours(comp.newTime),
+                0
+              )
+            );
+          }
+          return sum;
+        }, 0)
+      : 0;
+
+    // Combined total hours (schedules + compensation)
+    const totalHours = totalScheduleHours + totalCompensationHours;
+
     // Get section kind from first formScheduleDetail
     const targetSection = form.formScheduleDetails[0];
-    const sectionKind = targetSection?.kind || "";
+    const formSection = form.section || "";
 
-    const amount = calculateAmount(totalHours, sectionKind);
+    const amount = calculateAmount(totalHours, formSection);
 
     const templateData = {
       // Form data mapped to template fields
@@ -939,7 +959,7 @@ export const generateEvidenceDocx = async (req, res) => {
       b2: form.user.teachingLevel === "ปริญญาตรี" ? "✓" : "",
       b3: form.user.teachingLevel === "บัณฑิตศึกษา" ? "✓" : "",
 
-      // Hours and amount calculations
+      // Hours and amount calculations (includes both schedule and compensation hours)
       hours: totalHours.toString(),
       amount: amount,
       thaiAmount: ThaiBahtText(amount) || "",
