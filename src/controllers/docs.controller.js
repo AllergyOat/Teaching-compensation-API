@@ -220,42 +220,66 @@ export const generateCompensationDocx = async (req, res) => {
   try {
     console.log("Generate Compensation DOCX request received");
 
-    const { compensationId } = req.params;
+    const { formId, sectionId } = req.params;
 
-    if (!compensationId) {
+    if (!formId) {
       return res.status(400).json({
-        error: "Compensation ID is required",
+        error: "Form ID is required",
       });
     }
 
-    console.log("Fetching compensation data for ID:", compensationId);
+    console.log(
+      "Fetching compensation data for formId:",
+      formId,
+      "sectionId:",
+      sectionId
+    );
 
-    const compensation = await prisma.compensation.findUnique({
+    // Fetch form data with formScheduleDetails and compensations
+    const form = await prisma.form.findUnique({
       where: {
-        id: compensationId,
+        id: formId,
       },
       include: {
-        formSection: {
+        user: true,
+        formScheduleDetails: {
+          where: sectionId ? { sectionId: sectionId } : undefined,
           include: {
-            form: {
-              include: {
-                user: true,
-              },
-            },
+            compensation: true,
+            schedules: true,
           },
         },
-        originalSchedule: true, // Include the original schedule if referenced
       },
     });
 
-    if (!compensation) {
+    if (!form) {
       return res.status(404).json({
-        error: "Compensation not found",
-        compensationId,
+        error: "Form not found",
+        formId,
       });
     }
 
-    console.log("Compensation found:", JSON.stringify(compensation, null, 2));
+    // Find the target section
+    const targetSection = form.formScheduleDetails[0];
+
+    if (!targetSection) {
+      return res.status(404).json({
+        error: "Section not found",
+        sectionId,
+      });
+    }
+
+    const compensations = targetSection.compensation || [];
+
+    if (compensations.length === 0) {
+      return res.status(404).json({
+        error: "No compensation records found for this section",
+        formId,
+        sectionId,
+      });
+    }
+
+    console.log("Compensations found:", compensations.length);
 
     // Path to compensation template file
     const templatePath = path.join(
@@ -281,24 +305,7 @@ export const generateCompensationDocx = async (req, res) => {
       linebreaks: true,
     });
 
-    // Extract data from all related models
-    const formSection = compensation.formSection;
-    const form = formSection?.form;
-    const user = form?.user;
-    const originalSchedule = compensation.originalSchedule;
-
-    if (!formSection || !form || !user) {
-      return res.status(500).json({
-        error: "Incomplete data structure",
-        details: "Missing required relationships in compensation data",
-        debug: {
-          hasFormSection: !!formSection,
-          hasForm: !!form,
-          hasUser: !!user,
-          hasOriginalSchedule: !!originalSchedule,
-        },
-      });
-    }
+    const user = form.user;
 
     const templateData = {
       // Program data (mapped to Thai)
@@ -322,45 +329,27 @@ export const generateCompensationDocx = async (req, res) => {
       month: form.month || "",
 
       // FormSection data
-      sectionId: formSection.sectionId || "",
-      lectureId: formSection.kind === "LECTURE" ? formSection.sectionId : "",
-      labId: formSection.kind === "LAB" ? formSection.sectionId : "",
-      sectionKind: formSection.kind || "",
-
-      // Original Schedule data (if available)
-      scheduleDate: originalSchedule
-        ? formatThaiDate(originalSchedule.date)
-        : formatThaiDate(compensation.originalDate),
-      scheduleTime: originalSchedule?.time || compensation.originalTime || "",
-      scheduleTopic: originalSchedule?.topic || "",
-      scheduleRoom: originalSchedule?.room || "",
-      scheduleNote: originalSchedule?.note || "",
-      scheduleTotalHour: originalSchedule?.totalHour || 0,
-
-      // Compensation data (new/changed)
-      newDate: formatThaiDate(compensation.newDate),
-      newTime: compensation.newTime || "",
-      reason: compensation.reason || "",
+      sectionId: targetSection.sectionId || "",
+      lectureId:
+        targetSection.kind === "LECTURE" ? targetSection.sectionId : "",
+      labId: targetSection.kind === "LAB" ? targetSection.sectionId : "",
+      sectionKind: targetSection.kind || "",
 
       // Compensation data as array for template loop
-      compensation: [
-        {
-          previousDate: originalSchedule
-            ? formatThaiDate(originalSchedule.date)
-            : formatThaiDate(compensation.originalDate),
-          previousTime:
-            originalSchedule?.time || compensation.originalTime || "",
-          newDate: formatThaiDate(compensation.newDate),
-          newTime: compensation.newTime || "",
-          reason: compensation.reason || "",
-        },
-      ],
+      compensation: compensations.map((comp) => ({
+        previousDate: formatThaiDate(comp.originalDate),
+        previousTime: comp.originalTime || "",
+        newDate: formatThaiDate(comp.newDate),
+        newTime: comp.newTime || "",
+        reason: comp.reason || "",
+      })),
 
-      // Individual compensation fields (for backward compatibility)
-      previousDate: originalSchedule
-        ? formatThaiDate(originalSchedule.date)
-        : formatThaiDate(compensation.originalDate),
-      previousTime: originalSchedule?.time || compensation.originalTime || "",
+      // First compensation fields (for backward compatibility)
+      previousDate: formatThaiDate(compensations[0].originalDate),
+      previousTime: compensations[0].originalTime || "",
+      newDate: formatThaiDate(compensations[0].newDate),
+      newTime: compensations[0].newTime || "",
+      reason: compensations[0].reason || "",
 
       // Additional formatted fields
       generatedDate: formatThaiDate(new Date()),
@@ -401,7 +390,7 @@ export const generateCompensationDocx = async (req, res) => {
     const subjectSlug = form.subjectName
       ? form.subjectName.replace(/[^\w\s-]/g, "").replace(/\s+/g, "_")
       : "subject";
-    const filename = `memo_${compensation.id}_${userSlug}_${subjectSlug}_${timestamp}.docx`;
+    const filename = `memo_${formId}_${targetSection.sectionId}_${userSlug}_${subjectSlug}_${timestamp}.docx`;
 
     console.log("Generated filename:", filename);
 
