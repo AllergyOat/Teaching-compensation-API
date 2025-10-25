@@ -25,8 +25,8 @@ router.get("/:formId/:sectionId/generate-report", requireAuth, generateScheduleD
 router.get("/:formId/:sectionId/generate-compensation", requireAuth, generateCompensationDocx);
 
 // OUTPUT SECTION
-router.post("/generate-docx", requireAuth, permit("MAJOR_ADMIN"), generateDocx);
-router.post("/:formId/:sectionId/generate-evidence", requireAuth, permit("MAJOR_ADMIN"), generateEvidenceDocx);
+router.get("/:formId/:sectionId/generate-docx", requireAuth, permit("MAJOR_ADMIN"), generateDocx);
+router.get("/:formId/:sectionId/generate-evidence", requireAuth, permit("MAJOR_ADMIN"), generateEvidenceDocx);
 
 router.get("/:id", requireAuth, getFormById);
 router.get("/:id/:sectionId", requireAuth, getFormById);

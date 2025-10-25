@@ -5,7 +5,7 @@ import Docxtemplater from "docxtemplater";
 import prisma from "../config/prisma.js";
 import { fileURLToPath } from "url";
 import { formatThaiDate, mapProgramToThai } from "../utils/formatToThai.js";
-import { calculateAmount } from "../utils/calculater.js";
+import { calculateAmount, calculateTotalHours } from "../utils/calculater.js";
 import ThaiBahtText from "thai-baht-text";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -436,11 +436,67 @@ export const generateCompensationDocx = async (req, res) => {
 };
 
 //========= OUTPUT SECTION ==========
-export const generateDocx = (req, res) => {
+export const generateDocx = async (req, res) => {
   try {
-    const formData = req.body;
+    console.log("Generate Payment Form DOCX request received");
 
-    // Validate required fields (LATER: Make this)
+    const { formId, sectionId } = req.params;
+
+    if (!formId || !sectionId) {
+      return res.status(400).json({
+        error: "Form ID and Section ID are required",
+      });
+    }
+
+    console.log(
+      "Fetching form data for formId:",
+      formId,
+      "sectionId:",
+      sectionId
+    );
+
+    // Fetch form data with schedules and compensations
+    const form = await prisma.form.findUnique({
+      where: {
+        id: formId,
+      },
+      include: {
+        user: true,
+        formScheduleDetails: {
+          where: { sectionId: sectionId },
+          include: {
+            schedules: {
+              orderBy: {
+                date: "asc",
+              },
+            },
+            compensation: true,
+          },
+        },
+      },
+    });
+
+    if (!form) {
+      return res.status(404).json({
+        error: "Form not found",
+        formId,
+      });
+    }
+
+    const targetSection = form.formScheduleDetails[0];
+
+    if (!targetSection) {
+      return res.status(404).json({
+        error: "Section not found",
+        sectionId,
+      });
+    }
+
+    const schedules = targetSection.schedules || [];
+    const compensations = targetSection.compensation || [];
+
+    console.log("Schedules found:", schedules.length);
+    console.log("Compensations found:", compensations.length);
 
     // Path to template file
     const templatePath = path.join(
@@ -466,51 +522,251 @@ export const generateDocx = (req, res) => {
       linebreaks: true,
     });
 
-    // Process template data with additional calculated fields
-    const hour1 = parseFloat(formData.hour1) || 0;
-    const hour2 = parseFloat(formData.hour2) || 0;
-    const totalHours = hour1 + hour2;
+    // Prepare template data
+    const user = form.user;
+    const userName = `${user.firstName || ""} ${user.lastName || ""}`.trim();
 
+    // Calculate total hours from schedules
+    const totalHours = schedules.reduce((sum, schedule) => {
+      return sum + (parseFloat(schedule.totalHour) || 0);
+    }, 0);
+
+    // Calculate compensation hours for each compensation (ch1-6)
+    const compensationHours = compensations.map((comp) =>
+      calculateTotalHours(comp.newTime)
+    );
+
+    // Calculate total compensation hours
+    const totalCompensationHours = compensationHours.reduce(
+      (sum, hours) => sum + hours,
+      0
+    );
+
+    // Helper function to get week number of month
+    const getWeekOfMonth = (date) => {
+      const d = new Date(date);
+      const firstDay = new Date(d.getFullYear(), d.getMonth(), 1);
+      const dayOfMonth = d.getDate();
+      const firstDayOfWeek = firstDay.getDay();
+      return Math.ceil((dayOfMonth + firstDayOfWeek) / 7);
+    };
+
+    // Prepare schedule data (up to 6 rows)
     const templateData = {
-      // Original fields
-      major: formData.major || "",
-      check1: formData.check1 || "☐",
-      check2: formData.check2 || "☐",
-      check3: formData.check3 || "☐",
-      check4: formData.check4 || "☐",
-      id: formData.id || "",
-      name: formData.name || "",
-      position: formData.position || "",
-      week: formData.week || "",
-      date: formData.date || "",
-      subject: formData.subject || "",
-      hour1: hour1.toString(),
-      hour2: hour2.toString(),
+      // Program
+      program: mapProgramToThai(form.program) || "",
 
-      // Additional calculated/formatted fields
-      totalHours: totalHours.toFixed(1),
-      formattedWeek: `สัปดาห์ที่ ${formData.week || ""}`,
-      formattedId: `รหัส: ${formData.id || ""}`,
-      generatedDate: new Date().toLocaleDateString("th-TH", {
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-      }),
-      generatedDateTime: new Date().toLocaleString("th-TH"),
+      month: form.month || "",
 
-      // Additional fields that might be in template
-      subjectName: formData.subjectName || "",
-      room: formData.room || "",
-      note: formData.note || "",
-      semester: formData.semester || "",
-      year: formData.year || "",
-      month: formData.month || "",
+      year: form.year || "",
+
+      // Checkboxes for user type
+      check1: user.type === "อาจารย์ประจำ" ? "☑" : "☐",
+      check2: user.type === "อาจารย์พิเศษ" ? "☑" : "☐",
+
+      // Checkboxes for teaching level
+      check3: user.teachingLevel === "บัณฑิตศึกษา" ? "☑" : "☐",
+      check4: user.teachingLevel === "ปริญญาตรี" ? "☑" : "☐",
+
+      // User info
+      id: 1,
+      name: userName,
+      position: user.position || "",
+
+      // Week fields (week of month for each schedule date)
+      w1: schedules[0] ? getWeekOfMonth(schedules[0].date) : "",
+      w2: schedules[1] ? getWeekOfMonth(schedules[1].date) : "",
+      w3: schedules[2] ? getWeekOfMonth(schedules[2].date) : "",
+      w4: schedules[3] ? getWeekOfMonth(schedules[3].date) : "",
+      w5: schedules[4] ? getWeekOfMonth(schedules[4].date) : "",
+      w6: schedules[5] ? getWeekOfMonth(schedules[5].date) : "",
+
+      // Schedule dates (date1-6)
+      date1: schedules[0] ? formatThaiDate(schedules[0].date) : "",
+      date2: schedules[1] ? formatThaiDate(schedules[1].date) : "",
+      date3: schedules[2] ? formatThaiDate(schedules[2].date) : "",
+      date4: schedules[3] ? formatThaiDate(schedules[3].date) : "",
+      date5: schedules[4] ? formatThaiDate(schedules[4].date) : "",
+      date6: schedules[5] ? formatThaiDate(schedules[5].date) : "",
+
+      // Subject IDs (subId1-6)
+      subId1: schedules[0] ? form.subjectId : "",
+      subId2: schedules[1] ? form.subjectId : "",
+      subId3: schedules[2] ? form.subjectId : "",
+      subId4: schedules[3] ? form.subjectId : "",
+      subId5: schedules[4] ? form.subjectId : "",
+      subId6: schedules[5] ? form.subjectId : "",
+
+      // Section IDs (secId1-6)
+      secId1: schedules[0] ? sectionId : "",
+      secId2: schedules[1] ? sectionId : "",
+      secId3: schedules[2] ? sectionId : "",
+      secId4: schedules[3] ? sectionId : "",
+      secId5: schedules[4] ? sectionId : "",
+      secId6: schedules[5] ? sectionId : "",
+
+      // Lecture times (lec1-6) - show time if section is LECTURE, else "-"
+      lec1: schedules[0]
+        ? targetSection.kind === "LECTURE"
+          ? schedules[0].time
+          : "-"
+        : "",
+      lec2: schedules[1]
+        ? targetSection.kind === "LECTURE"
+          ? schedules[1].time
+          : "-"
+        : "",
+      lec3: schedules[2]
+        ? targetSection.kind === "LECTURE"
+          ? schedules[2].time
+          : "-"
+        : "",
+      lec4: schedules[3]
+        ? targetSection.kind === "LECTURE"
+          ? schedules[3].time
+          : "-"
+        : "",
+      lec5: schedules[4]
+        ? targetSection.kind === "LECTURE"
+          ? schedules[4].time
+          : "-"
+        : "",
+      lec6: schedules[5]
+        ? targetSection.kind === "LECTURE"
+          ? schedules[5].time
+          : "-"
+        : "",
+
+      // Lab times (lab1-6) - show time if section is LAB, else "-"
+      lab1: schedules[0]
+        ? targetSection.kind === "LAB"
+          ? schedules[0].time
+          : "-"
+        : "",
+      lab2: schedules[1]
+        ? targetSection.kind === "LAB"
+          ? schedules[1].time
+          : "-"
+        : "",
+      lab3: schedules[2]
+        ? targetSection.kind === "LAB"
+          ? schedules[2].time
+          : "-"
+        : "",
+      lab4: schedules[3]
+        ? targetSection.kind === "LAB"
+          ? schedules[3].time
+          : "-"
+        : "",
+      lab5: schedules[4]
+        ? targetSection.kind === "LAB"
+          ? schedules[4].time
+          : "-"
+        : "",
+      lab6: schedules[5]
+        ? targetSection.kind === "LAB"
+          ? schedules[5].time
+          : "-"
+        : "",
+
+      // Hours (h1-6)
+      h1: schedules[0] ? schedules[0].totalHour : "",
+      h2: schedules[1] ? schedules[1].totalHour : "",
+      h3: schedules[2] ? schedules[2].totalHour : "",
+      h4: schedules[3] ? schedules[3].totalHour : "",
+      h5: schedules[4] ? schedules[4].totalHour : "",
+      h6: schedules[5] ? schedules[5].totalHour : "",
+
+      // Compensation lecture times (cle1-6) - show time if section is LECTURE, else ""
+      cle1: compensations[0]
+        ? targetSection.kind === "LECTURE"
+          ? compensations[0].newTime
+          : "-"
+        : "",
+      cle2: compensations[1]
+        ? targetSection.kind === "LECTURE"
+          ? compensations[1].newTime
+          : "-"
+        : "",
+      cle3: compensations[2]
+        ? targetSection.kind === "LECTURE"
+          ? compensations[2].newTime
+          : "-"
+        : "",
+      cle4: compensations[3]
+        ? targetSection.kind === "LECTURE"
+          ? compensations[3].newTime
+          : "-"
+        : "",
+      cle5: compensations[4]
+        ? targetSection.kind === "LECTURE"
+          ? compensations[4].newTime
+          : "-"
+        : "",
+      cle6: compensations[5]
+        ? targetSection.kind === "LECTURE"
+          ? compensations[5].newTime
+          : "-"
+        : "",
+
+      // Compensation lab times (cla1-6) - show time if section is LAB, else ""
+      cla1: compensations[0]
+        ? targetSection.kind === "LAB"
+          ? compensations[0].newTime
+          : "-"
+        : "",
+      cla2: compensations[1]
+        ? targetSection.kind === "LAB"
+          ? compensations[1].newTime
+          : "-"
+        : "",
+      cla3: compensations[2]
+        ? targetSection.kind === "LAB"
+          ? compensations[2].newTime
+          : "-"
+        : "",
+      cla4: compensations[3]
+        ? targetSection.kind === "LAB"
+          ? compensations[3].newTime
+          : "-"
+        : "",
+      cla5: compensations[4]
+        ? targetSection.kind === "LAB"
+          ? compensations[4].newTime
+          : "-"
+        : "",
+      cla6: compensations[5]
+        ? targetSection.kind === "LAB"
+          ? compensations[5].newTime
+          : "-"
+        : "",
+
+      // Compensation hours (ch1-6) - calculated from newTime
+      ch1: compensationHours[0] || "",
+      ch2: compensationHours[1] || "",
+      ch3: compensationHours[2] || "",
+      ch4: compensationHours[3] || "",
+      ch5: compensationHours[4] || "",
+      ch6: compensationHours[5] || "",
+
+      // Total hours amount and compensation total
+      ht: totalHours,
+      cht: totalCompensationHours,
+
+      // Combined total (hours + compensation hours)
+      th: totalHours + totalCompensationHours,
+      // m1: rate per hour by section kind (LAB=300, else 600)
+      m1: targetSection.kind === "LAB" ? 300 : 600,
+      // m2: total payment in Thai Baht text (th * m1)
+      m2:
+        (totalHours + totalCompensationHours) *
+        (targetSection.kind === "LAB" ? 300 : 600),
     };
 
     console.log("Template data prepared:", templateData);
 
     try {
-      // Render document with data (new API)
+      // Render document with data
       doc.render(templateData);
       console.log("Document rendered successfully");
     } catch (renderError) {
@@ -530,12 +786,10 @@ export const generateDocx = (req, res) => {
 
     // Generate filename
     const timestamp = Date.now();
-    const nameSlug = formData.name
-      ? formData.name.replace(/[^\w\s-]/g, "").replace(/\s+/g, "_")
+    const nameSlug = userName
+      ? userName.replace(/[^\w\s-]/g, "").replace(/\s+/g, "_")
       : "document";
-    const filename = `compensation_form_${
-      formData.id || "user"
-    }_${nameSlug}_${timestamp}.docx`;
+    const filename = `payment_form_${formId}_${sectionId}_${nameSlug}_${timestamp}.docx`;
 
     console.log("Generated file:", filename, "Size:", buffer.length, "bytes");
 
@@ -643,7 +897,7 @@ export const generateEvidenceDocx = async (req, res) => {
       form.user.lastName || ""
     }`.trim();
 
-    // Calculate total hours from all schedules in all formScheduleDetails
+    // Calculate total hours from schedules in the target section
     const totalHours = Array.isArray(form.formScheduleDetails)
       ? form.formScheduleDetails.reduce((sum, section) => {
           if (section.schedules && Array.isArray(section.schedules)) {
@@ -660,21 +914,32 @@ export const generateEvidenceDocx = async (req, res) => {
         }, 0)
       : 0;
 
-    const amount = calculateAmount(totalHours, form.section) || "";
+    // Get section kind from first formScheduleDetail
+    const targetSection = form.formScheduleDetails[0];
+    const sectionKind = targetSection?.kind || "";
+
+    const amount = calculateAmount(totalHours, sectionKind);
+
     const templateData = {
+      // Form data mapped to template fields
       major: form.user.major || "",
-      program: mapProgramToThai(form.program) || "",
       faculty: form.user.department || "",
+      program: mapProgramToThai(form.program || "") || "",
       semester: form.semester || "",
       year: form.year || "",
       month: form.month || "",
 
+      // User info
       id: 1,
       name: name || "",
       position: form.user.position || "",
-      b1: formData.b1 || "",
-      b2: formData.b2 || "",
-      b3: formData.b3 || "",
+
+      // Checkboxes - b1 is always checked
+      b1: "✓",
+      b2: form.user.teachingLevel === "ปริญญาตรี" ? "✓" : "",
+      b3: form.user.teachingLevel === "บัณฑิตศึกษา" ? "✓" : "",
+
+      // Hours and amount calculations
       hours: totalHours.toString(),
       amount: amount,
       thaiAmount: ThaiBahtText(amount) || "",
@@ -706,9 +971,7 @@ export const generateEvidenceDocx = async (req, res) => {
     const nameSlug = name
       ? name.replace(/[^\w\s-]/g, "").replace(/\s+/g, "_")
       : "evidence";
-    const filename = `evidence_${
-      formData.id || "user"
-    }_${nameSlug}_${timestamp}.docx`;
+    const filename = `evidence_${nameSlug}_${timestamp}.docx`;
 
     console.log("Generated file:", filename, "Size:", buffer.length, "bytes");
 
