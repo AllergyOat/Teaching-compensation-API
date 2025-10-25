@@ -143,9 +143,30 @@ export const createForm = async (req, res) => {
           }
         }
       });
+
+      // Wait for all compensation records to be created
+      if (compensationPromises.length > 0) {
+        await Promise.all(compensationPromises);
+      }
     }
 
-    return res.status(201).json({ data: created });
+    // Fetch the complete form with all compensation records
+    const completeForm = await prisma.form.findUnique({
+      where: { id: created.id },
+      include: {
+        formScheduleDetails: {
+          include: {
+            schedules: true,
+            compensation: true,
+          },
+        },
+        user: {
+          select: { id: true, firstName: true, lastName: true, email: true },
+        },
+      },
+    });
+
+    return res.status(201).json({ data: completeForm });
   } catch (err) {
     console.error("createForm error:", err);
     return res.status(500).json({ message: "Internal Server Error" });
