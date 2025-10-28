@@ -1,10 +1,14 @@
 import fs from "fs";
-import path from "path";
+import path, { format } from "path";
 import PizZip from "pizzip";
 import Docxtemplater from "docxtemplater";
 import prisma from "../config/prisma.js";
 import { fileURLToPath } from "url";
-import { formatThaiDate, mapProgramToThai } from "../utils/formatToThai.js";
+import {
+  formatThaiDate,
+  mapProgramToThai,
+  formatNumber,
+} from "../utils/formatter.js";
 import { calculateAmount, calculateTotalHours } from "../utils/calculater.js";
 import ThaiBahtText from "thai-baht-text";
 
@@ -542,6 +546,10 @@ export const generateDocx = async (req, res) => {
       0
     );
 
+    const totalAmount =
+      (totalHours + totalCompensationHours) *
+      (targetSection.kind === "LAB" ? 300 : 600);
+
     // Helper function to get week number of month
     const getWeekOfMonth = (date) => {
       const d = new Date(date);
@@ -756,11 +764,9 @@ export const generateDocx = async (req, res) => {
       // Combined total (hours + compensation hours)
       th: totalHours + totalCompensationHours,
       // m1: rate per hour by section kind (LAB=300, else 600)
-      m1: form.section === "LAB" ? 300 : 600,
+      m1: targetSection.kind === "LAB" ? 300 : 600,
       // m2: total payment in Thai Baht text (th * m1)
-      m2:
-        (totalHours + totalCompensationHours) *
-        (form.section === "LAB" ? 300 : 600),
+      m2: formatNumber(totalAmount),
     };
 
     console.log("Template data prepared:", templateData);
@@ -938,7 +944,7 @@ export const generateEvidenceDocx = async (req, res) => {
     const targetSection = form.formScheduleDetails[0];
     const formSection = form.section || "";
 
-    const amount = calculateAmount(totalHours, formSection);
+    const amount = calculateAmount(totalHours, targetSection?.kind);
 
     const templateData = {
       // Form data mapped to template fields
@@ -961,7 +967,7 @@ export const generateEvidenceDocx = async (req, res) => {
 
       // Hours and amount calculations (includes both schedule and compensation hours)
       hours: totalHours.toString(),
-      amount: amount,
+      amount: formatNumber(amount),
       thaiAmount: ThaiBahtText(amount) || "",
     };
 
