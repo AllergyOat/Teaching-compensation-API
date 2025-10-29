@@ -906,26 +906,46 @@ export const deleteForm = async (req, res) => {
         });
 
         if (existingTracking) {
-          await tx.semesterTracking.update({
-            where: {
-              userId_semester_year_subjectId_sectionId: {
-                userId: update.userId,
-                semester: update.semester,
-                year: update.year,
-                subjectId: update.subjectId,
-                sectionId: update.sectionId,
+          // Calculate what hours would remain after removing this form's hours
+          const remainingHoursAfterDelete =
+            existingTracking.hoursUsed - update.hoursToRemove;
+
+          if (remainingHoursAfterDelete <= 0) {
+            // If no hours left, delete the tracking record
+            await tx.semesterTracking.delete({
+              where: {
+                userId_semester_year_subjectId_sectionId: {
+                  userId: update.userId,
+                  semester: update.semester,
+                  year: update.year,
+                  subjectId: update.subjectId,
+                  sectionId: update.sectionId,
+                },
               },
-            },
-            data: {
-              hoursUsed: {
-                decrement: update.hoursToRemove,
+            });
+          } else {
+            // Otherwise, just reduce the hours
+            await tx.semesterTracking.update({
+              where: {
+                userId_semester_year_subjectId_sectionId: {
+                  userId: update.userId,
+                  semester: update.semester,
+                  year: update.year,
+                  subjectId: update.subjectId,
+                  sectionId: update.sectionId,
+                },
               },
-              hoursRemaining: {
-                increment: update.hoursToRemove,
+              data: {
+                hoursUsed: {
+                  decrement: update.hoursToRemove,
+                },
+                hoursRemaining: {
+                  increment: update.hoursToRemove,
+                },
+                updatedAt: new Date(),
               },
-              updatedAt: new Date(),
-            },
-          });
+            });
+          }
         }
       }
     });
