@@ -178,6 +178,44 @@ export const createForm = async (req, res) => {
       },
     });
 
+    // Validate totalHours for new sections BEFORE creating tracking
+    const sectionsWithoutTotalHours = [];
+    for (const section of completeForm.formScheduleDetails) {
+      // Check if this section already has tracking
+      const existingTracking = await prisma.semesterTracking.findUnique({
+        where: {
+          userId_semester_year_subjectId_sectionId: {
+            userId: completeForm.userId,
+            semester: completeForm.semester,
+            year: completeForm.year,
+            subjectId: completeForm.subjectId,
+            sectionId: section.sectionId,
+          },
+        },
+      });
+
+      // If no existing tracking and no totalHours provided, this is an error
+      if (
+        !existingTracking &&
+        (section.totalHours === null || section.totalHours === undefined)
+      ) {
+        sectionsWithoutTotalHours.push(section.sectionId);
+      }
+    }
+
+    // If any new sections are missing totalHours, rollback and return error
+    if (sectionsWithoutTotalHours.length > 0) {
+      // Delete the created form
+      await prisma.form.delete({
+        where: { id: created.id },
+      });
+
+      return res.status(400).json({
+        message: "Cannot create form: totalHours is required for new sections",
+        missingSections: sectionsWithoutTotalHours,
+      });
+    }
+
     // Update or Create SemesterTracking for each section
     for (const section of completeForm.formScheduleDetails) {
       // Calculate hours used in this month
