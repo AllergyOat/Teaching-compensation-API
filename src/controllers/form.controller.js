@@ -1042,8 +1042,6 @@ export const getSemesterTracking = async (req, res) => {
         totalHoursRequired: track.totalHoursRequired,
         hoursUsed: track.hoursUsed,
         hoursRemaining: track.hoursRemaining,
-        createdAt: track.createdAt,
-        updatedAt: track.updatedAt,
       });
       return acc;
     }, {});
