@@ -65,6 +65,7 @@ export const createForm = async (req, res) => {
           formSectionsCreate.push({
             sectionId: detail.lectureId,
             kind: detail.kind || "LECTURE", // Use kind from request body with fallback
+            totalHours: detail.totalHours || null, // Add totalHours for semester tracking
             schedules: {
               create: schedulesForSection,
             },
@@ -176,6 +177,81 @@ export const createForm = async (req, res) => {
         },
       },
     });
+
+    // Update or Create SemesterTracking for each section
+    for (const section of completeForm.formScheduleDetails) {
+      // Calculate hours used in this month
+      const hoursUsedThisMonth = section.schedules.reduce(
+        (sum, schedule) => sum + (schedule.totalHour || 0),
+        0
+      );
+
+      // Skip if no hours used this month
+      if (hoursUsedThisMonth === 0) {
+        continue;
+      }
+
+      // Check if tracking already exists
+      const existingTracking = await prisma.semesterTracking.findUnique({
+        where: {
+          userId_semester_year_subjectId_sectionId: {
+            userId: completeForm.userId,
+            semester: completeForm.semester,
+            year: completeForm.year,
+            subjectId: completeForm.subjectId,
+            sectionId: section.sectionId,
+          },
+        },
+      });
+
+      if (existingTracking) {
+        // Update existing tracking (works even without totalHours)
+        await prisma.semesterTracking.update({
+          where: {
+            userId_semester_year_subjectId_sectionId: {
+              userId: completeForm.userId,
+              semester: completeForm.semester,
+              year: completeForm.year,
+              subjectId: completeForm.subjectId,
+              sectionId: section.sectionId,
+            },
+          },
+          data: {
+            hoursUsed: {
+              increment: hoursUsedThisMonth,
+            },
+            hoursRemaining: {
+              decrement: hoursUsedThisMonth,
+            },
+            updatedAt: new Date(),
+          },
+        });
+      } else if (
+        section.totalHours !== null &&
+        section.totalHours !== undefined
+      ) {
+        // Create new tracking (requires totalHours)
+        await prisma.semesterTracking.create({
+          data: {
+            userId: completeForm.userId,
+            semester: completeForm.semester,
+            year: completeForm.year,
+            subjectId: completeForm.subjectId,
+            subjectName: completeForm.subjectName,
+            sectionId: section.sectionId,
+            kind: section.kind || "LECTURE",
+            totalHoursRequired: section.totalHours,
+            hoursUsed: hoursUsedThisMonth,
+            hoursRemaining: section.totalHours - hoursUsedThisMonth,
+          },
+        });
+      } else {
+        // Warning: Cannot create tracking without totalHours
+        console.warn(
+          `Cannot create SemesterTracking for ${completeForm.subjectId} section ${section.sectionId}: totalHours not provided`
+        );
+      }
+    }
 
     return res.status(201).json({ data: completeForm });
   } catch (err) {
@@ -713,6 +789,60 @@ export const deleteForm = async (req, res) => {
       return res.status(404).json({ message: "Form not found" });
     }
 
+    return res.status(500).json({
+      message: "Internal Server Error",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+};
+
+export const getSemesterTracking = async (req, res) => {
+  try {
+    const { semester, year } = req.query;
+    const userId = req.user.id;
+
+    if (!semester || !year) {
+      return res.status(400).json({
+        message: "semester and year are required",
+      });
+    }
+
+    // Get all tracking records for this user in this semester
+    const trackings = await prisma.semesterTracking.findMany({
+      where: {
+        userId,
+        semester,
+        year: parseInt(year),
+      },
+      orderBy: [{ subjectId: "asc" }, { sectionId: "asc" }],
+    });
+
+    // Group by subject
+    const groupedBySubject = trackings.reduce((acc, track) => {
+      if (!acc[track.subjectId]) {
+        acc[track.subjectId] = {
+          subjectId: track.subjectId,
+          subjectName: track.subjectName,
+          sections: [],
+        };
+      }
+      acc[track.subjectId].sections.push({
+        sectionId: track.sectionId,
+        kind: track.kind,
+        totalHoursRequired: track.totalHoursRequired,
+        hoursUsed: track.hoursUsed,
+        hoursRemaining: track.hoursRemaining,
+        createdAt: track.createdAt,
+        updatedAt: track.updatedAt,
+      });
+      return acc;
+    }, {});
+
+    return res.status(200).json({
+      data: Object.values(groupedBySubject),
+    });
+  } catch (error) {
+    console.error("getSemesterTracking error:", error);
     return res.status(500).json({
       message: "Internal Server Error",
       error: process.env.NODE_ENV === "development" ? error.message : undefined,

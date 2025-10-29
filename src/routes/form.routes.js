@@ -5,6 +5,7 @@ import {
   getFormById,
   deleteForm,
   createCompensation,
+  getSemesterTracking,
 } from "../controllers/form.controller.js";
 import {
   generateScheduleDocx,
@@ -19,6 +20,8 @@ const router = Router();
 router.post("/create-form", requireAuth, createForm);
 router.post("/create-compensation", requireAuth, createCompensation);
 
+router.get("/tracking", requireAuth, getSemesterTracking);
+
 // INPUT SECTION
 router.get("/:formId/:sectionId/generate-report", requireAuth, generateScheduleDocx);
 // router.get("/:formId/:sectionId/generate-report/:format", requireAuth, generateScheduleDocx);
@@ -32,5 +35,6 @@ router.get("/:id", requireAuth, getFormById);
 router.get("/:id/:sectionId", requireAuth, getFormById);
 router.put("/edit-form/:id", requireAuth, editForm);
 router.delete("/:id", requireAuth, deleteForm);
+
 
 export default router;
