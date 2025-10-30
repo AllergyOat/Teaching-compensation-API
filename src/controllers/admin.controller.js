@@ -198,6 +198,88 @@ export const listHome = async (req, res, next) => {
   }
 };
 
+export const createSubjectSectionRate = async (req, res, next) => {
+  try {
+    const {
+      subjectId,
+      subjectName,
+      program,
+      section,
+      sectionId,
+      kind,
+      semester,
+      ratePerHour,
+      maxTotalHours,
+      teacherTotalHours,
+    } = req.body;
+
+    if (
+      !subjectId ||
+      !subjectName ||
+      !section ||
+      !sectionId ||
+      !kind ||
+      !semester ||
+      !ratePerHour ||
+      !maxTotalHours
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "กรุณากรอกข้อมูลให้ครบถ้วน",
+      });
+    }
+
+    // ตรวจสอบว่ามี rate config นี้อยู่แล้วหรือไม่
+    const existingRate = await prisma.subjectSectionRate.findUnique({
+      where: {
+        subjectId_sectionId_semester: {
+          subjectId,
+          sectionId,
+          semester,
+        },
+      },
+    });
+
+    if (existingRate) {
+      return res.status(409).json({
+        success: false,
+        message: "มีข้อมูล rate สำหรับวิชาและหมู่เรียนนี้อยู่แล้ว",
+      });
+    }
+
+    // สร้าง SubjectSectionRate
+    const newRate = await prisma.subjectSectionRate.create({
+      data: {
+        subjectId,
+        subjectName,
+        section,
+        sectionId,
+        program,
+        kind,
+        semester,
+        ratePerHour: parseFloat(ratePerHour),
+        MaxTotalHours: parseFloat(maxTotalHours),
+        teacherTotalHours: teacherTotalHours
+          ? parseFloat(teacherTotalHours)
+          : null,
+      },
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: "สร้าง rate configuration สำเร็จ",
+      data: newRate,
+    });
+  } catch (error) {
+    console.error("Error creating subject section rate:", error);
+    return res.status(500).json({
+      success: false,
+      message: "เกิดข้อผิดพลาดในการสร้างข้อมูล",
+      error: error.message,
+    });
+  }
+};
+
 export const updateFormStatus = async (req, res, next) => {
   try {
     const formId = req.params.id;

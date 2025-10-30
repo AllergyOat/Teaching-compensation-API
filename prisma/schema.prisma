@@ -37,18 +37,38 @@ model User {
   semesterTracking        SemesterTracking[]
 }
 
+model SubjectSectionRate {
+  id                String  @id @default(cuid())
+  subjectId         String
+  subjectName       String
+  semester          String
+  program           Program  @default(REGULAR_PROGRAM)
+  // Section แบ่งเป็น LECTURE กับ LAB
+  section           String
+  //หมู่เรียน
+  sectionId         String
+  kind              Section
+  // ข้อมูล rate และชั่วโมง
+  ratePerHour       Float // อัตราค่าตอบแทนต่อชั่วโมง
+  MaxTotalHours     Float // ชั่วโมงสอนต่อภาคสูงสุดที่เท่าไหร่ (30, 45)
+  teacherTotalHours Float? // ชั่วโมงที่อาจารย์ request ต้องการสอน (ถ้ามี)
+
+  @@unique([subjectId, sectionId, semester])
+}
+
 model SemesterTracking {
   id          String  @id @default(cuid())
   userId      String
   user        User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   semester    String
+  program     Program @default(REGULAR_PROGRAM)
   year        Int
   subjectId   String
   subjectName String
   sectionId   String
   kind        Section
 
-  totalHoursRequired Float // ชั่วโมงที่ต้องสอนทั้งภาค (copy จาก FormSections)
+  totalHoursRequired Float // ชั่วโมงที่ต้องสอนทั้งภาค (copy จาก subjectSectionRate.defaultTotalHours)
   hoursUsed          Float @default(0) // ชั่วโมงที่สอนไปแล้ว
   hoursRemaining     Float // totalHoursRequired - hoursUsed
 
