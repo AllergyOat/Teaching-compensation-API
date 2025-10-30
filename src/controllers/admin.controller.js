@@ -336,6 +336,49 @@ export const createSubjectSectionRate = async (req, res, next) => {
   }
 };
 
+export const editSubjectSectionRate = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { subjectId, sectionId, semester, program, kind, ratePerHour, maxTotalHours, teacherTotalHours } = req.body;
+
+    // Validate required fields
+    if (!subjectId || !sectionId || !semester || !ratePerHour || !maxTotalHours || !program) {
+      return res.status(400).json({
+        success: false,
+        message: "กรุณากรอกข้อมูลให้ครบถ้วน",
+      });
+    }
+
+    // Update SubjectSectionRate
+    const updatedRate = await prisma.subjectSectionRate.update({
+      where: { id: id },
+      data: {
+        subjectId,
+        sectionId,
+        semester,
+        program,
+        kind,
+        ratePerHour: parseFloat(ratePerHour),
+        MaxTotalHours: parseFloat(maxTotalHours),
+        teacherTotalHours: teacherTotalHours ? parseFloat(teacherTotalHours) : null,
+      },
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "แก้ไขข้อมูล rate configuration สำเร็จ",
+      data: updatedRate,
+    });
+  } catch (error) {
+    console.error("Error editing subject section rate:", error);
+    return res.status(500).json({
+      success: false,
+      message: "เกิดข้อผิดพลาดในการแก้ไขข้อมูล",
+      error: error.message,
+    });
+  }
+};
+
 export const updateFormStatus = async (req, res, next) => {
   try {
     const formId = req.params.id;
