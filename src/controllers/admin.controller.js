@@ -212,6 +212,7 @@ export const createSubjectSectionRate = async (req, res, next) => {
       maxTotalHours,
       teacherTotalHours,
     } = req.body;
+    const UserId = req.user.id;
 
     if (
       !subjectId ||
@@ -221,7 +222,8 @@ export const createSubjectSectionRate = async (req, res, next) => {
       !kind ||
       !semester ||
       !ratePerHour ||
-      !maxTotalHours
+      !maxTotalHours ||
+      !program
     ) {
       return res.status(400).json({
         success: false,
@@ -232,10 +234,11 @@ export const createSubjectSectionRate = async (req, res, next) => {
     // ตรวจสอบว่ามี rate config นี้อยู่แล้วหรือไม่
     const existingRate = await prisma.subjectSectionRate.findUnique({
       where: {
-        subjectId_sectionId_semester: {
+        subjectId_sectionId_semester_program: {
           subjectId,
           sectionId,
           semester,
+          program,
         },
       },
     });
@@ -243,32 +246,85 @@ export const createSubjectSectionRate = async (req, res, next) => {
     if (existingRate) {
       return res.status(409).json({
         success: false,
-        message: "มีข้อมูล rate สำหรับวิชาและหมู่เรียนนี้อยู่แล้ว",
+        message: "มีข้อมูล rate สำหรับรหัสวิชา หมู่เรียนและ program นี้อยู่แล้ว",
       });
     }
 
-    // สร้าง SubjectSectionRate
-    const newRate = await prisma.subjectSectionRate.create({
-      data: {
-        subjectId,
-        subjectName,
-        section,
-        sectionId,
-        program,
-        kind,
-        semester,
-        ratePerHour: parseFloat(ratePerHour),
-        MaxTotalHours: parseFloat(maxTotalHours),
-        teacherTotalHours: teacherTotalHours
-          ? parseFloat(teacherTotalHours)
-          : null,
-      },
+    // สร้าง SubjectSectionRate และ SemesterTracking พร้อมกัน
+    const result = await prisma.$transaction(async (tx) => {
+      // 1. สร้าง SubjectSectionRate
+      const newRate = await tx.subjectSectionRate.create({
+        data: {
+          subjectId,
+          subjectName,
+          section,
+          sectionId,
+          program,
+          kind,
+          semester,
+          ratePerHour: parseFloat(ratePerHour),
+          MaxTotalHours: parseFloat(maxTotalHours),
+          teacherTotalHours: teacherTotalHours
+            ? parseFloat(teacherTotalHours)
+            : null,
+        },
+      });
+
+      // 2. สร้าง SemesterTracking สำหรับ user ที่สร้าง rate config
+      // ใช้ MaxTotalHours เป็นค่าเริ่มต้น หรือ teacherTotalHours ถ้ามี
+      const totalHoursToUse = teacherTotalHours
+        ? parseFloat(teacherTotalHours)
+        : parseFloat(maxTotalHours);
+
+      const currentYear = new Date().getFullYear() + 543; // ปีปัจจุบัน (พ.ศ.)
+
+      // ตรวจสอบว่ามี tracking อยู่แล้วหรือไม่
+      const existingTracking = await tx.semesterTracking.findUnique({
+        where: {
+          userId_semester_year_subjectId_sectionId_program: {
+            userId: UserId,
+            semester: semester,
+            year: currentYear,
+            subjectId: subjectId,
+            sectionId: sectionId,
+            program: program,
+          },
+        },
+      });
+
+      let trackingCreated = false;
+      // ถ้ายังไม่มี ให้สร้างใหม่
+      if (!existingTracking) {
+        await tx.semesterTracking.create({
+          data: {
+            userId: UserId,
+            semester: semester,
+            program: program,
+            year: currentYear,
+            subjectId: subjectId,
+            subjectName: subjectName,
+            sectionId: sectionId,
+            kind: kind,
+            totalHoursRequired: totalHoursToUse,
+            hoursUsed: 0,
+            hoursRemaining: totalHoursToUse,
+          },
+        });
+        trackingCreated = true;
+      }
+
+      return {
+        rate: newRate,
+        trackingCreated,
+      };
     });
 
     return res.status(201).json({
       success: true,
-      message: "สร้าง rate configuration สำเร็จ",
-      data: newRate,
+      message: result.trackingCreated
+        ? "สร้าง rate configuration และ SemesterTracking สำเร็จ"
+        : "สร้าง rate configuration สำเร็จ (SemesterTracking มีอยู่แล้ว)",
+      data: result.rate,
     });
   } catch (error) {
     console.error("Error creating subject section rate:", error);

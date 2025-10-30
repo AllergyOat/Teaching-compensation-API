@@ -53,7 +53,7 @@ model SubjectSectionRate {
   MaxTotalHours     Float // ชั่วโมงสอนต่อภาคสูงสุดที่เท่าไหร่ (30, 45)
   teacherTotalHours Float? // ชั่วโมงที่อาจารย์ request ต้องการสอน (ถ้ามี)
 
-  @@unique([subjectId, sectionId, semester])
+  @@unique([subjectId, sectionId, semester, program])
 }
 
 model SemesterTracking {
@@ -75,8 +75,8 @@ model SemesterTracking {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([userId, semester, year, subjectId, sectionId])
-  @@index([userId, semester, year])
+  @@unique([semester, year, subjectId, sectionId, program])
+  @@index([semester, year, program])
 }
 
 model EmailVerificationToken {

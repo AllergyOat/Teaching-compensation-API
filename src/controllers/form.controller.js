@@ -184,12 +184,12 @@ export const createForm = async (req, res) => {
       // Check if this section already has tracking
       const existingTracking = await prisma.semesterTracking.findUnique({
         where: {
-          userId_semester_year_subjectId_sectionId: {
-            userId: completeForm.userId,
+          semester_year_subjectId_sectionId_program: {
             semester: completeForm.semester,
             year: completeForm.year,
             subjectId: completeForm.subjectId,
             sectionId: section.sectionId,
+            program: completeForm.program,
           },
         },
       });
@@ -232,12 +232,12 @@ export const createForm = async (req, res) => {
       // Check if tracking already exists
       const existingTracking = await prisma.semesterTracking.findUnique({
         where: {
-          userId_semester_year_subjectId_sectionId: {
-            userId: completeForm.userId,
+          semester_year_subjectId_sectionId_program: {
             semester: completeForm.semester,
             year: completeForm.year,
             subjectId: completeForm.subjectId,
             sectionId: section.sectionId,
+            program: completeForm.program,
           },
         },
       });
@@ -246,12 +246,12 @@ export const createForm = async (req, res) => {
         // Update existing tracking (works even without totalHours)
         await prisma.semesterTracking.update({
           where: {
-            userId_semester_year_subjectId_sectionId: {
-              userId: completeForm.userId,
+            semester_year_subjectId_sectionId_program: {
               semester: completeForm.semester,
               year: completeForm.year,
               subjectId: completeForm.subjectId,
               sectionId: section.sectionId,
+              program: completeForm.program,
             },
           },
           data: {
@@ -277,6 +277,7 @@ export const createForm = async (req, res) => {
             subjectId: completeForm.subjectId,
             subjectName: completeForm.subjectName,
             sectionId: section.sectionId,
+            program: completeForm.program, // Add program field
             kind: section.kind || "LECTURE",
             totalHoursRequired: section.totalHours,
             hoursUsed: hoursUsedThisMonth,
@@ -1009,7 +1010,6 @@ export const deleteForm = async (req, res) => {
 export const getSemesterTracking = async (req, res) => {
   try {
     const { semester, year, program } = req.query;
-    const userId = req.user.id;
 
     if (!semester || !year) {
       return res.status(400).json({
@@ -1017,61 +1017,27 @@ export const getSemesterTracking = async (req, res) => {
       });
     }
 
-    const formWhere = {
-      userId,
+    // Build where clause for tracking
+    const trackingWhere = {
       semester,
       year: parseInt(year),
       ...(program && { program }), // Filter by program if provided
     };
 
-    const forms = await prisma.form.findMany({
-      where: formWhere,
-      include: {
-        formScheduleDetails: {
-          include: {
-            schedules: true,
-          },
-        },
-      },
-    });
-
-    // Get all tracking records for this user in this semester
+    // Get tracking records directly with program filter
     const trackings = await prisma.semesterTracking.findMany({
-      where: {
-        userId,
-        semester,
-        year: parseInt(year),
-      },
+      where: trackingWhere,
       orderBy: [{ subjectId: "asc" }, { sectionId: "asc" }],
     });
 
-    // Filter trackings based on which subjects/sections exist in the filtered forms
-    let filteredTrackings = trackings;
-    if (program) {
-      // Get unique subjectId+sectionId combinations from forms
-      const validCombinations = new Set();
-      forms.forEach((form) => {
-        form.formScheduleDetails.forEach((section) => {
-          validCombinations.add(`${form.subjectId}_${section.sectionId}`);
-        });
-      });
-
-      // Filter trackings to only include valid combinations
-      filteredTrackings = trackings.filter((track) =>
-        validCombinations.has(`${track.subjectId}_${track.sectionId}`)
-      );
-    }
-
-    // Group by subject and include program info
-    const groupedBySubject = filteredTrackings.reduce((acc, track) => {
+    // Group by subject and use program from tracking
+    const groupedBySubject = trackings.reduce((acc, track) => {
       if (!acc[track.subjectId]) {
-        // Find a form for this subject to get program info
-        const subjectForm = forms.find((f) => f.subjectId === track.subjectId);
-
         acc[track.subjectId] = {
           subjectId: track.subjectId,
           subjectName: track.subjectName,
-          program: subjectForm?.program || null, // Include program from form
+          program: track.program, // Use program from SemesterTracking
+          semester: track.semester,
           sections: [],
         };
       }
