@@ -1008,7 +1008,7 @@ export const deleteForm = async (req, res) => {
 
 export const getSemesterTracking = async (req, res) => {
   try {
-    const { semester, year } = req.query;
+    const { semester, year, program } = req.query;
     const userId = req.user.id;
 
     if (!semester || !year) {
@@ -1016,6 +1016,24 @@ export const getSemesterTracking = async (req, res) => {
         message: "semester and year are required",
       });
     }
+
+    const formWhere = {
+      userId,
+      semester,
+      year: parseInt(year),
+      ...(program && { program }), // Filter by program if provided
+    };
+
+    const forms = await prisma.form.findMany({
+      where: formWhere,
+      include: {
+        formScheduleDetails: {
+          include: {
+            schedules: true,
+          },
+        },
+      },
+    });
 
     // Get all tracking records for this user in this semester
     const trackings = await prisma.semesterTracking.findMany({
@@ -1027,12 +1045,33 @@ export const getSemesterTracking = async (req, res) => {
       orderBy: [{ subjectId: "asc" }, { sectionId: "asc" }],
     });
 
-    // Group by subject
-    const groupedBySubject = trackings.reduce((acc, track) => {
+    // Filter trackings based on which subjects/sections exist in the filtered forms
+    let filteredTrackings = trackings;
+    if (program) {
+      // Get unique subjectId+sectionId combinations from forms
+      const validCombinations = new Set();
+      forms.forEach((form) => {
+        form.formScheduleDetails.forEach((section) => {
+          validCombinations.add(`${form.subjectId}_${section.sectionId}`);
+        });
+      });
+
+      // Filter trackings to only include valid combinations
+      filteredTrackings = trackings.filter((track) =>
+        validCombinations.has(`${track.subjectId}_${track.sectionId}`)
+      );
+    }
+
+    // Group by subject and include program info
+    const groupedBySubject = filteredTrackings.reduce((acc, track) => {
       if (!acc[track.subjectId]) {
+        // Find a form for this subject to get program info
+        const subjectForm = forms.find((f) => f.subjectId === track.subjectId);
+
         acc[track.subjectId] = {
           subjectId: track.subjectId,
           subjectName: track.subjectName,
+          program: subjectForm?.program || null, // Include program from form
           sections: [],
         };
       }
