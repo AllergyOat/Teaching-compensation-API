@@ -1039,3 +1039,366 @@ export const generateEvidenceDocx = async (req, res) => {
     });
   }
 };
+
+export const generateSummaryScheduleDocx = async (req, res) => {
+  try {
+    console.log("Generate Summary Schedule DOCX request received");
+
+    const { formId, sectionId } = req.params;
+
+    if (!formId) {
+      return res.status(400).json({
+        error: "Form ID is required",
+      });
+    }
+
+    console.log("Fetching form data for formId:", formId);
+
+    // Fetch form data
+    const form = await prisma.form.findUnique({
+      where: {
+        id: formId,
+      },
+      include: {
+        user: true,
+        formScheduleDetails: {
+          where: sectionId ? { sectionId } : undefined,
+          include: {
+            schedules: true,
+          },
+        },
+      },
+    });
+
+    if (!form) {
+      return res.status(404).json({
+        error: "Form not found",
+        formId,
+      });
+    }
+
+    console.log("Form found:", form);
+
+    // Path to summary schedule template file
+    const templatePath = path.join(
+      __dirname,
+      "../templates/output/OUTPUT3.docx"
+    );
+
+    if (!fs.existsSync(templatePath)) {
+      console.error("Template file not found at:", templatePath);
+      return res.status(500).json({
+        error: "Summary schedule template file not found",
+        path: templatePath,
+      });
+    }
+
+    // Read template file
+    const content = fs.readFileSync(templatePath, "binary");
+    const zip = new PizZip(content);
+
+    // Create Docxtemplater instance
+    const doc = new Docxtemplater(zip, {
+      paragraphLoop: true,
+      linebreaks: true,
+    });
+
+    const user = form.user;
+    const userName = `${user.firstName || ""} ${user.lastName || ""}`.trim();
+
+    // Get target section for calculating m1 and m2
+    const targetSection = form.formScheduleDetails[0];
+
+    // Calculate total hours from all schedules
+    const totalHours = form.formScheduleDetails.reduce((sum, section) => {
+      return (
+        sum +
+        (section.schedules || []).reduce((schedSum, schedule) => {
+          return schedSum + (parseFloat(schedule.totalHour) || 0);
+        }, 0)
+      );
+    }, 0);
+
+    // Calculate m1 (rate per hour) based on section kind
+    const m1 = targetSection?.kind === "LAB" ? 300 : 600;
+
+    // Calculate m2 (total amount)
+    const totalAmount = totalHours * m1;
+    const m2 = formatNumber(totalAmount);
+
+    // Prepare semester checkboxes
+    const check1 = form.semester === "ภาคต้น" ? "☑" : "☐";
+    const check2 = form.semester === "ภาคปลาย" ? "☑" : "☐";
+    const check3 = form.semester === "ภาคฤดูร้อน" ? "☑" : "☐";
+
+    // Helper function to get Thai day name from date
+    const getThaiDayName = (date) => {
+      const days = [
+        "วันอาทิตย์",
+        "วันจันทร์",
+        "วันอังคาร",
+        "วันพุธ",
+        "วันพฤหัสบดี",
+        "วันศุกร์",
+        "วันเสาร์",
+      ];
+      const d = new Date(date);
+      return days[d.getDay()];
+    };
+
+    // Helper function to parse time range and return start/end hour
+    const parseTimeRange = (timeStr) => {
+      // Examples: "07.00-08.30", "13.00-16.00", "08:30-10:00"
+      if (!timeStr) return null;
+
+      const match = timeStr.match(
+        /(\d{1,2})[:.:](\d{2})\s*[-–]\s*(\d{1,2})[:.:](\d{2})/
+      );
+      if (!match) return null;
+
+      const startHour = parseInt(match[1]);
+      const startMin = parseInt(match[2]);
+      const endHour = parseInt(match[3]);
+      const endMin = parseInt(match[4]);
+
+      return { startHour, startMin, endHour, endMin };
+    };
+
+    // Helper function to map time to cell index (b11-b38)
+    // b11=7:00, b12=7:30, b13=8:00, b14=8:30, ..., b38=20:30
+    const getTimeCellIndex = (hour, minute) => {
+      // Starting from 7:00 AM (index 1)
+      // Each 30-minute slot increments index by 1
+      const baseHour = 7;
+      if (hour < baseHour || hour > 20) return -1;
+
+      const hourOffset = (hour - baseHour) * 2;
+      const minOffset = minute >= 30 ? 1 : 0;
+      return hourOffset + minOffset + 1; // +1 because b11 is index 1
+    };
+
+    // Group schedules by day
+    const schedulesByDay = {};
+    form.formScheduleDetails.forEach((section) => {
+      (section.schedules || []).forEach((schedule) => {
+        const dayName = getThaiDayName(schedule.date);
+        if (!schedulesByDay[dayName]) {
+          schedulesByDay[dayName] = [];
+        }
+        schedulesByDay[dayName].push({
+          time: schedule.time,
+          subjectName: form.subjectName,
+          subjectId: form.subjectId,
+          sectionId: section.sectionId,
+          kind: section.kind,
+        });
+      });
+    });
+
+    // Prepare table rows for each day
+    const thaiDays = [
+      "วันจันทร์",
+      "วันอังคาร",
+      "วันพุธ",
+      "วันพฤหัสบดี",
+      "วันศุกร์",
+      "วันเสาร์",
+      "วันอาทิตย์",
+    ];
+    const tableRows = thaiDays.map((dayName) => {
+      // Initialize empty row
+      const row = {
+        dayName,
+        a11: "",
+        a12: "",
+        a13: "",
+        a14: "",
+        a15: "",
+        a16: "",
+        a17: "",
+        a18: "",
+        a19: "",
+        a20: "",
+        a21: "",
+        a22: "",
+        a23: "",
+        a24: "",
+        a25: "",
+        a26: "",
+        a27: "",
+        a28: "",
+        a29: "",
+        a30: "",
+        a31: "",
+        a32: "",
+        a33: "",
+        a34: "",
+        a35: "",
+        a36: "",
+        a37: "",
+        a38: "",
+        b11: "",
+        b12: "",
+        b13: "",
+        b14: "",
+        b15: "",
+        b16: "",
+        b17: "",
+        b18: "",
+        b19: "",
+        b20: "",
+        b21: "",
+        b22: "",
+        b23: "",
+        b24: "",
+        b25: "",
+        b26: "",
+        b27: "",
+        b28: "",
+        b29: "",
+        b30: "",
+        b31: "",
+        b32: "",
+        b33: "",
+        b34: "",
+        b35: "",
+        b36: "",
+        b37: "",
+        b38: "",
+      };
+
+      // Fill in schedule data for this day
+      const daySchedules = schedulesByDay[dayName] || [];
+      daySchedules.forEach((schedule) => {
+        const timeRange = parseTimeRange(schedule.time);
+        if (!timeRange) return;
+
+        const startIndex = getTimeCellIndex(
+          timeRange.startHour,
+          timeRange.startMin
+        );
+        const endIndex = getTimeCellIndex(timeRange.endHour, timeRange.endMin);
+
+        if (startIndex < 1 || endIndex > 28) return;
+
+        // Calculate middle index for placing subject info
+        const middleIndex = Math.floor((startIndex + endIndex) / 2);
+
+        // Fill b cells with arrow markers
+        for (let i = startIndex; i <= endIndex; i++) {
+          const cellKey = `b${i < 10 ? "1" : i < 20 ? "2" : "3"}${i % 10}`;
+
+          if (i === startIndex) {
+            row[cellKey] = "<----------";
+          } else if (i === endIndex) {
+            row[cellKey] = "---------->";
+          } else if (i > startIndex && i < endIndex) {
+            row[cellKey] = "------------";
+          }
+        }
+
+        // Fill a cells with subject info at the middle position
+        const aCellKey1 = `a${
+          middleIndex < 10 ? "1" : middleIndex < 20 ? "2" : "3"
+        }${middleIndex % 10}`;
+        const aCellKey2 = `a${
+          middleIndex + 1 < 10 ? "1" : middleIndex + 1 < 20 ? "2" : "3"
+        }${(middleIndex + 1) % 10}`;
+
+        // a11 (or middle position) = subjectId
+        row[aCellKey1] = schedule.subjectId || "";
+
+        // a12 (or middle position + 1) = (lab/lect) (sectionId)
+        // Always show kind and sectionId regardless of form.section
+        const kindLabel = schedule.kind === "LAB" ? "lab" : "lact";
+        row[aCellKey2] = `(${kindLabel}) ${schedule.sectionId}`;
+      });
+
+      return row;
+    });
+
+    // Prepare template data
+    const templateData = {
+      name: userName,
+      degree: user.degree || "",
+      position: user.position || "",
+      major: user.major || "",
+      program: mapProgramToThai(form.program) || "",
+      department: user.department || "",
+      faculty: user.faculty || "",
+      year: form.year || "",
+      check1,
+      check2,
+      check3,
+      m1,
+      m2,
+      totalHour: totalHours,
+      tr: tableRows,
+    };
+
+    try {
+      // Render document with data
+      doc.render(templateData);
+      console.log("Document rendered successfully");
+    } catch (renderError) {
+      console.error("Render error:", renderError);
+      return res.status(400).json({
+        error: "Error rendering template",
+        details: renderError.message,
+        properties: renderError.properties || {},
+      });
+    }
+
+    // Generate output buffer
+    const buffer = doc.getZip().generate({
+      type: "nodebuffer",
+      compression: "DEFLATE",
+    });
+
+    // Generate filename
+    const timestamp = Date.now();
+    const nameSlug = userName
+      ? userName.replace(/[^\w\s-]/g, "").replace(/\s+/g, "_")
+      : "summary";
+    const filename = `summary_schedule_${formId}_${nameSlug}_${timestamp}.docx`;
+
+    console.log("Generated file:", filename, "Size:", buffer.length, "bytes");
+
+    // Set response headers for file download with proper encoding
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    );
+
+    // Use encodeURIComponent to handle special characters
+    const encodedFilename = encodeURIComponent(filename);
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename*=UTF-8''${encodedFilename}`
+    );
+    res.setHeader("Content-Length", buffer.length);
+
+    // Send file
+    res.send(buffer);
+  } catch (error) {
+    console.error("Generate Summary Schedule DOCX error:", error);
+
+    // Handle specific errors
+    if (error.message.includes("ENOENT")) {
+      return res.status(500).json({
+        error: "Template file not found",
+        details:
+          "The summary schedule template file is missing from the templates folder",
+      });
+    }
+
+    return res.status(500).json({
+      error: "Internal server error",
+      details:
+        process.env.NODE_ENV === "development"
+          ? error.message
+          : "Failed to generate summary schedule document",
+      stack: process.env.NODE_ENV === "development" ? error.stack : undefined,
+    });
+  }
+};

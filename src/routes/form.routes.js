@@ -11,6 +11,7 @@ import {
   generateDocx,
   generateEvidenceDocx,
   generateCompensationDocx,
+  generateSummaryScheduleDocx,
 } from "../controllers/docs.controller.js";
 import { requireAuth, permit } from "../middlewares/auth.js";
 
@@ -27,6 +28,7 @@ router.get("/:formId/:sectionId/generate-compensation", requireAuth, generateCom
 // OUTPUT SECTION
 router.get("/:formId/:sectionId/generate-docx", requireAuth, permit("MAJOR_ADMIN"), generateDocx);
 router.get("/:formId/:sectionId/generate-evidence", requireAuth, permit("MAJOR_ADMIN"), generateEvidenceDocx);
+router.get("/:formId/:sectionId/generate-sumschedule", requireAuth, permit("MAJOR_ADMIN"), generateSummaryScheduleDocx);
 
 router.get("/:id", requireAuth, getFormById);
 router.get("/:id/:sectionId", requireAuth, getFormById);
