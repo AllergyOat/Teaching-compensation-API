@@ -184,12 +184,13 @@ export const createForm = async (req, res) => {
       // Check if this section already has tracking
       const existingTracking = await prisma.semesterTracking.findUnique({
         where: {
-          semester_year_subjectId_sectionId_program: {
+          semester_year_subjectId_sectionId_program_section: {
             semester: completeForm.semester,
             year: completeForm.year,
             subjectId: completeForm.subjectId,
             sectionId: section.sectionId,
             program: completeForm.program,
+            section: completeForm.section,
           },
         },
       });
@@ -232,12 +233,13 @@ export const createForm = async (req, res) => {
       // Check if tracking already exists
       const existingTracking = await prisma.semesterTracking.findUnique({
         where: {
-          semester_year_subjectId_sectionId_program: {
+          semester_year_subjectId_sectionId_program_section: {
             semester: completeForm.semester,
             year: completeForm.year,
             subjectId: completeForm.subjectId,
             sectionId: section.sectionId,
             program: completeForm.program,
+            section: completeForm.section,
           },
         },
       });
@@ -246,12 +248,13 @@ export const createForm = async (req, res) => {
         // Update existing tracking (works even without totalHours)
         await prisma.semesterTracking.update({
           where: {
-            semester_year_subjectId_sectionId_program: {
+            semester_year_subjectId_sectionId_program_section: {
               semester: completeForm.semester,
               year: completeForm.year,
               subjectId: completeForm.subjectId,
               sectionId: section.sectionId,
               program: completeForm.program,
+              section: completeForm.section,
             },
           },
           data: {
@@ -278,6 +281,7 @@ export const createForm = async (req, res) => {
             subjectName: completeForm.subjectName,
             sectionId: section.sectionId,
             program: completeForm.program, // Add program field
+            section: completeForm.section, // Add section field
             kind: section.kind || "LECTURE",
             totalHoursRequired: section.totalHours,
             hoursUsed: hoursUsedThisMonth,
