@@ -44,7 +44,7 @@ model SubjectSectionRate {
   semester          String
   program           Program @default(REGULAR_PROGRAM)
   // Section แบ่งเป็น LECTURE กับ LAB
-  section           String
+  section           Section @default(LECTURE)
   //หมู่เรียน
   sectionId         String
   kind              Section
@@ -63,7 +63,7 @@ model SemesterTracking {
   semester    String
   program     Program @default(REGULAR_PROGRAM)
   // Section แบ่งเป็น LECTURE กับ LAB
-  section     String
+  section     Section @default(LECTURE)
   year        Int
   subjectId   String
   subjectName String
