@@ -281,8 +281,7 @@ export const createSubjectSectionRate = async (req, res, next) => {
       // ตรวจสอบว่ามี tracking อยู่แล้วหรือไม่
       const existingTracking = await tx.semesterTracking.findUnique({
         where: {
-          userId_semester_year_subjectId_sectionId_program: {
-            userId: UserId,
+          semester_year_subjectId_sectionId_program: {
             semester: semester,
             year: currentYear,
             subjectId: subjectId,
