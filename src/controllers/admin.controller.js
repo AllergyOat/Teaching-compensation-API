@@ -234,11 +234,12 @@ export const createSubjectSectionRate = async (req, res, next) => {
     // ตรวจสอบว่ามี rate config นี้อยู่แล้วหรือไม่
     const existingRate = await prisma.subjectSectionRate.findUnique({
       where: {
-        subjectId_sectionId_semester_program: {
+        subjectId_sectionId_semester_program_section: {
           subjectId,
           sectionId,
           semester,
           program,
+          section,
         },
       },
     });
@@ -281,12 +282,13 @@ export const createSubjectSectionRate = async (req, res, next) => {
       // ตรวจสอบว่ามี tracking อยู่แล้วหรือไม่
       const existingTracking = await tx.semesterTracking.findUnique({
         where: {
-          semester_year_subjectId_sectionId_program: {
+          semester_year_subjectId_sectionId_program_section: {
             semester: semester,
             year: currentYear,
             subjectId: subjectId,
             sectionId: sectionId,
             program: program,
+            section: section,
           },
         },
       });
@@ -299,6 +301,7 @@ export const createSubjectSectionRate = async (req, res, next) => {
             userId: UserId,
             semester: semester,
             program: program,
+            section: section,
             year: currentYear,
             subjectId: subjectId,
             subjectName: subjectName,

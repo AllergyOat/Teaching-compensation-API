@@ -1009,7 +1009,7 @@ export const deleteForm = async (req, res) => {
 
 export const getSemesterTracking = async (req, res) => {
   try {
-    const { semester, year, program } = req.query;
+    const { semester, year, program, section } = req.query;
 
     if (!semester || !year) {
       return res.status(400).json({
@@ -1022,6 +1022,7 @@ export const getSemesterTracking = async (req, res) => {
       semester,
       year: parseInt(year),
       ...(program && { program }), // Filter by program if provided
+      ...(section && { section }), // Filter by section if provided
     };
 
     // Get tracking records directly with program filter
@@ -1038,6 +1039,7 @@ export const getSemesterTracking = async (req, res) => {
           subjectName: track.subjectName,
           program: track.program, // Use program from SemesterTracking
           semester: track.semester,
+          section: track.section,
           sections: [],
         };
       }

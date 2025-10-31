@@ -42,7 +42,7 @@ model SubjectSectionRate {
   subjectId         String
   subjectName       String
   semester          String
-  program           Program  @default(REGULAR_PROGRAM)
+  program           Program @default(REGULAR_PROGRAM)
   // Section แบ่งเป็น LECTURE กับ LAB
   section           String
   //หมู่เรียน
@@ -53,7 +53,7 @@ model SubjectSectionRate {
   MaxTotalHours     Float // ชั่วโมงสอนต่อภาคสูงสุดที่เท่าไหร่ (30, 45)
   teacherTotalHours Float? // ชั่วโมงที่อาจารย์ request ต้องการสอน (ถ้ามี)
 
-  @@unique([subjectId, sectionId, semester, program])
+  @@unique([subjectId, sectionId, semester, program, section])
 }
 
 model SemesterTracking {
@@ -62,6 +62,8 @@ model SemesterTracking {
   user        User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   semester    String
   program     Program @default(REGULAR_PROGRAM)
+  // Section แบ่งเป็น LECTURE กับ LAB
+  section     String
   year        Int
   subjectId   String
   subjectName String
@@ -75,8 +77,8 @@ model SemesterTracking {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([semester, year, subjectId, sectionId, program])
-  @@index([semester, year, program])
+  @@unique([semester, year, subjectId, sectionId, program, section])
+  @@index([semester, year, program, section])
 }
 
 model EmailVerificationToken {
