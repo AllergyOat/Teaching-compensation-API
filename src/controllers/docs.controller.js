@@ -1311,10 +1311,14 @@ export const generateSummaryScheduleDocx = async (req, res) => {
         // a11 (or middle position) = subjectId
         row[aCellKey1] = schedule.subjectId || "";
 
-        // a12 (or middle position + 1) = (lab/lect) (sectionId)
-        // Always show kind and sectionId regardless of form.section
-        const kindLabel = schedule.kind === "LAB" ? "lab" : "lact";
-        row[aCellKey2] = `(${kindLabel}) ${schedule.sectionId}`;
+        // a12 (or middle position + 1) = sectionId with optional kind label
+        // If form.section is LECTURE, show "หมู่ " prefix instead of kind label
+        if (form.section === "LECTURE") {
+          row[aCellKey2] = `หมู่ ${schedule.sectionId}`;
+        } else {
+          const kindLabel = schedule.kind === "LAB" ? "lab" : "lact";
+          row[aCellKey2] = `(${kindLabel}) ${schedule.sectionId}`;
+        }
       });
 
       return row;
