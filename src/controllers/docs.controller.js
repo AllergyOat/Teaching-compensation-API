@@ -629,42 +629,42 @@ export const generateDocx = async (req, res) => {
           ? schedules[0].time.match(
               /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
             )?.[1] || schedules[0].time
-          : "-"
+          : ""
         : "",
       lec2: schedules[1]
         ? targetSection.kind === "LECTURE"
           ? schedules[1].time.match(
               /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
             )?.[1] || schedules[1].time
-          : "-"
+          : ""
         : "",
       lec3: schedules[2]
         ? targetSection.kind === "LECTURE"
           ? schedules[2].time.match(
               /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
             )?.[1] || schedules[2].time
-          : "-"
+          : ""
         : "",
       lec4: schedules[3]
         ? targetSection.kind === "LECTURE"
           ? schedules[3].time.match(
               /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
             )?.[1] || schedules[3].time
-          : "-"
+          : ""
         : "",
       lec5: schedules[4]
         ? targetSection.kind === "LECTURE"
           ? schedules[4].time.match(
               /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
             )?.[1] || schedules[4].time
-          : "-"
+          : ""
         : "",
       lec6: schedules[5]
         ? targetSection.kind === "LECTURE"
           ? schedules[5].time.match(
               /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
             )?.[1] || schedules[5].time
-          : "-"
+          : ""
         : "",
 
       // Lecture end times (lec11-66) - show end time with "น." if section is LECTURE, else "-"
@@ -673,42 +673,42 @@ export const generateDocx = async (req, res) => {
           ? (schedules[0].time.match(
               /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
             )?.[2] || "") + (schedules[0].time.includes("-") ? " น." : "")
-          : "-"
+          : ""
         : "",
       lec22: schedules[1]
         ? targetSection.kind === "LECTURE"
           ? (schedules[1].time.match(
               /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
             )?.[2] || "") + (schedules[1].time.includes("-") ? " น." : "")
-          : "-"
+          : ""
         : "",
       lec33: schedules[2]
         ? targetSection.kind === "LECTURE"
           ? (schedules[2].time.match(
               /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
             )?.[2] || "") + (schedules[2].time.includes("-") ? " น." : "")
-          : "-"
+          : ""
         : "",
       lec44: schedules[3]
         ? targetSection.kind === "LECTURE"
           ? (schedules[3].time.match(
               /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
             )?.[2] || "") + (schedules[3].time.includes("-") ? " น." : "")
-          : "-"
+          : ""
         : "",
       lec55: schedules[4]
         ? targetSection.kind === "LECTURE"
           ? (schedules[4].time.match(
               /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
             )?.[2] || "") + (schedules[4].time.includes("-") ? " น." : "")
-          : "-"
+          : ""
         : "",
       lec66: schedules[5]
         ? targetSection.kind === "LECTURE"
           ? (schedules[5].time.match(
               /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
             )?.[2] || "") + (schedules[5].time.includes("-") ? " น." : "")
-          : "-"
+          : ""
         : "",
 
       // Lab start times (lab1-6) - show start time if section is LAB, else "-"
@@ -717,42 +717,42 @@ export const generateDocx = async (req, res) => {
           ? schedules[0].time.match(
               /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
             )?.[1] || schedules[0].time
-          : "-"
+          : ""
         : "",
       lab2: schedules[1]
         ? targetSection.kind === "LAB"
           ? schedules[1].time.match(
               /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
             )?.[1] || schedules[1].time
-          : "-"
+          : ""
         : "",
       lab3: schedules[2]
         ? targetSection.kind === "LAB"
           ? schedules[2].time.match(
               /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
             )?.[1] || schedules[2].time
-          : "-"
+          : ""
         : "",
       lab4: schedules[3]
         ? targetSection.kind === "LAB"
           ? schedules[3].time.match(
               /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
             )?.[1] || schedules[3].time
-          : "-"
+          : ""
         : "",
       lab5: schedules[4]
         ? targetSection.kind === "LAB"
           ? schedules[4].time.match(
               /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
             )?.[1] || schedules[4].time
-          : "-"
+          : ""
         : "",
       lab6: schedules[5]
         ? targetSection.kind === "LAB"
           ? schedules[5].time.match(
               /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
             )?.[1] || schedules[5].time
-          : "-"
+          : ""
         : "",
 
       // Lab end times (lab11-66) - show end time with "น." if section is LAB, else "-"
@@ -761,42 +761,42 @@ export const generateDocx = async (req, res) => {
           ? (schedules[0].time.match(
               /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
             )?.[2] || "") + (schedules[0].time.includes("-") ? " น." : "")
-          : "-"
+          : ""
         : "",
       lab22: schedules[1]
         ? targetSection.kind === "LAB"
           ? (schedules[1].time.match(
               /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
             )?.[2] || "") + (schedules[1].time.includes("-") ? " น." : "")
-          : "-"
+          : ""
         : "",
       lab33: schedules[2]
         ? targetSection.kind === "LAB"
           ? (schedules[2].time.match(
               /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
             )?.[2] || "") + (schedules[2].time.includes("-") ? " น." : "")
-          : "-"
+          : ""
         : "",
       lab44: schedules[3]
         ? targetSection.kind === "LAB"
           ? (schedules[3].time.match(
               /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
             )?.[2] || "") + (schedules[3].time.includes("-") ? " น." : "")
-          : "-"
+          : ""
         : "",
       lab55: schedules[4]
         ? targetSection.kind === "LAB"
           ? (schedules[4].time.match(
               /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
             )?.[2] || "") + (schedules[4].time.includes("-") ? " น." : "")
-          : "-"
+          : ""
         : "",
       lab66: schedules[5]
         ? targetSection.kind === "LAB"
           ? (schedules[5].time.match(
               /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
             )?.[2] || "") + (schedules[5].time.includes("-") ? " น." : "")
-          : "-"
+          : ""
         : "",
 
       // Hours (h1-6)
@@ -813,42 +813,42 @@ export const generateDocx = async (req, res) => {
           ? compensations[0].newTime.match(
               /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
             )?.[1] || compensations[0].newTime
-          : "-"
+          : ""
         : "",
       cle2: compensations[1]
         ? targetSection.kind === "LECTURE"
           ? compensations[1].newTime.match(
               /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
             )?.[1] || compensations[1].newTime
-          : "-"
+          : ""
         : "",
       cle3: compensations[2]
         ? targetSection.kind === "LECTURE"
           ? compensations[2].newTime.match(
               /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
             )?.[1] || compensations[2].newTime
-          : "-"
+          : ""
         : "",
       cle4: compensations[3]
         ? targetSection.kind === "LECTURE"
           ? compensations[3].newTime.match(
               /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
             )?.[1] || compensations[3].newTime
-          : "-"
+          : ""
         : "",
       cle5: compensations[4]
         ? targetSection.kind === "LECTURE"
           ? compensations[4].newTime.match(
               /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
             )?.[1] || compensations[4].newTime
-          : "-"
+          : ""
         : "",
       cle6: compensations[5]
         ? targetSection.kind === "LECTURE"
           ? compensations[5].newTime.match(
               /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
             )?.[1] || compensations[5].newTime
-          : "-"
+          : ""
         : "",
 
       // Compensation lecture end times (cle11-66) - show end time with "น." if section is LECTURE, else "-"
@@ -858,7 +858,7 @@ export const generateDocx = async (req, res) => {
               /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
             )?.[2] || "") +
             (compensations[0].newTime.includes("-") ? " น." : "")
-          : "-"
+          : ""
         : "",
       cle22: compensations[1]
         ? targetSection.kind === "LECTURE"
@@ -866,7 +866,7 @@ export const generateDocx = async (req, res) => {
               /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
             )?.[2] || "") +
             (compensations[1].newTime.includes("-") ? " น." : "")
-          : "-"
+          : ""
         : "",
       cle33: compensations[2]
         ? targetSection.kind === "LECTURE"
@@ -874,7 +874,7 @@ export const generateDocx = async (req, res) => {
               /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
             )?.[2] || "") +
             (compensations[2].newTime.includes("-") ? " น." : "")
-          : "-"
+          : ""
         : "",
       cle44: compensations[3]
         ? targetSection.kind === "LECTURE"
@@ -882,7 +882,7 @@ export const generateDocx = async (req, res) => {
               /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
             )?.[2] || "") +
             (compensations[3].newTime.includes("-") ? " น." : "")
-          : "-"
+          : ""
         : "",
       cle55: compensations[4]
         ? targetSection.kind === "LECTURE"
@@ -890,7 +890,7 @@ export const generateDocx = async (req, res) => {
               /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
             )?.[2] || "") +
             (compensations[4].newTime.includes("-") ? " น." : "")
-          : "-"
+          : ""
         : "",
       cle66: compensations[5]
         ? targetSection.kind === "LECTURE"
@@ -898,7 +898,7 @@ export const generateDocx = async (req, res) => {
               /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
             )?.[2] || "") +
             (compensations[5].newTime.includes("-") ? " น." : "")
-          : "-"
+          : ""
         : "",
 
       // Compensation lab start times (cla1-6) - show start time if section is LAB, else "-"
@@ -907,42 +907,42 @@ export const generateDocx = async (req, res) => {
           ? compensations[0].newTime.match(
               /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
             )?.[1] || compensations[0].newTime
-          : "-"
+          : ""
         : "",
       cla2: compensations[1]
         ? targetSection.kind === "LAB"
           ? compensations[1].newTime.match(
               /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
             )?.[1] || compensations[1].newTime
-          : "-"
+          : ""
         : "",
       cla3: compensations[2]
         ? targetSection.kind === "LAB"
           ? compensations[2].newTime.match(
               /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
             )?.[1] || compensations[2].newTime
-          : "-"
+          : ""
         : "",
       cla4: compensations[3]
         ? targetSection.kind === "LAB"
           ? compensations[3].newTime.match(
               /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
             )?.[1] || compensations[3].newTime
-          : "-"
+          : ""
         : "",
       cla5: compensations[4]
         ? targetSection.kind === "LAB"
           ? compensations[4].newTime.match(
               /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
             )?.[1] || compensations[4].newTime
-          : "-"
+          : ""
         : "",
       cla6: compensations[5]
         ? targetSection.kind === "LAB"
           ? compensations[5].newTime.match(
               /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
             )?.[1] || compensations[5].newTime
-          : "-"
+          : ""
         : "",
 
       // Compensation lab end times (cla11-66) - show end time with "น." if section is LAB, else "-"
@@ -952,7 +952,7 @@ export const generateDocx = async (req, res) => {
               /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
             )?.[2] || "") +
             (compensations[0].newTime.includes("-") ? " น." : "")
-          : "-"
+          : ""
         : "",
       cla22: compensations[1]
         ? targetSection.kind === "LAB"
@@ -960,7 +960,7 @@ export const generateDocx = async (req, res) => {
               /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
             )?.[2] || "") +
             (compensations[1].newTime.includes("-") ? " น." : "")
-          : "-"
+          : ""
         : "",
       cla33: compensations[2]
         ? targetSection.kind === "LAB"
@@ -968,7 +968,7 @@ export const generateDocx = async (req, res) => {
               /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
             )?.[2] || "") +
             (compensations[2].newTime.includes("-") ? " น." : "")
-          : "-"
+          : ""
         : "",
       cla44: compensations[3]
         ? targetSection.kind === "LAB"
@@ -976,7 +976,7 @@ export const generateDocx = async (req, res) => {
               /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
             )?.[2] || "") +
             (compensations[3].newTime.includes("-") ? " น." : "")
-          : "-"
+          : ""
         : "",
       cla55: compensations[4]
         ? targetSection.kind === "LAB"
@@ -984,7 +984,7 @@ export const generateDocx = async (req, res) => {
               /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
             )?.[2] || "") +
             (compensations[4].newTime.includes("-") ? " น." : "")
-          : "-"
+          : ""
         : "",
       cla66: compensations[5]
         ? targetSection.kind === "LAB"
@@ -992,7 +992,7 @@ export const generateDocx = async (req, res) => {
               /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
             )?.[2] || "") +
             (compensations[5].newTime.includes("-") ? " น." : "")
-          : "-"
+          : ""
         : "",
 
       // Compensation hours (ch1-6) - calculated from newTime
