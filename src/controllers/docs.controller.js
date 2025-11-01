@@ -1281,18 +1281,21 @@ export const generateSummaryScheduleDocx = async (req, res) => {
 
         if (startIndex < 1 || endIndex > 28) return;
 
+        // The end arrow should be one slot before the end time
+        const endArrowIndex = endIndex - 1;
+
         // Calculate middle index for placing subject info
-        const middleIndex = Math.floor((startIndex + endIndex) / 2);
+        const middleIndex = Math.floor((startIndex + endArrowIndex) / 2);
 
         // Fill b cells with arrow markers
-        for (let i = startIndex; i <= endIndex; i++) {
+        for (let i = startIndex; i <= endArrowIndex; i++) {
           const cellKey = `b${i < 10 ? "1" : i < 20 ? "2" : "3"}${i % 10}`;
 
           if (i === startIndex) {
             row[cellKey] = "<----------";
-          } else if (i === endIndex) {
+          } else if (i === endArrowIndex) {
             row[cellKey] = "---------->";
-          } else if (i > startIndex && i < endIndex) {
+          } else if (i > startIndex && i < endArrowIndex) {
             row[cellKey] = "------------";
           }
         }
