@@ -922,6 +922,8 @@ export const deleteForm = async (req, res) => {
           year: existingForm.year,
           subjectId: existingForm.subjectId,
           sectionId: section.sectionId,
+          program: existingForm.program,
+          section: existingForm.section,
           hoursToRemove,
         });
       }
@@ -938,12 +940,13 @@ export const deleteForm = async (req, res) => {
       for (const update of trackingUpdates) {
         const existingTracking = await tx.semesterTracking.findUnique({
           where: {
-            userId_semester_year_subjectId_sectionId: {
-              userId: update.userId,
+            semester_year_subjectId_sectionId_program_section: {
               semester: update.semester,
               year: update.year,
               subjectId: update.subjectId,
               sectionId: update.sectionId,
+              program: update.program,
+              section: update.section,
             },
           },
         });
@@ -957,12 +960,13 @@ export const deleteForm = async (req, res) => {
             // If no hours left, delete the tracking record
             await tx.semesterTracking.delete({
               where: {
-                userId_semester_year_subjectId_sectionId: {
-                  userId: update.userId,
+                semester_year_subjectId_sectionId_program_section: {
                   semester: update.semester,
                   year: update.year,
                   subjectId: update.subjectId,
                   sectionId: update.sectionId,
+                  program: update.program,
+                  section: update.section,
                 },
               },
             });
@@ -970,12 +974,13 @@ export const deleteForm = async (req, res) => {
             // Otherwise, just reduce the hours
             await tx.semesterTracking.update({
               where: {
-                userId_semester_year_subjectId_sectionId: {
-                  userId: update.userId,
+                semester_year_subjectId_sectionId_program_section: {
                   semester: update.semester,
                   year: update.year,
                   subjectId: update.subjectId,
                   sectionId: update.sectionId,
+                  program: update.program,
+                  section: update.section,
                 },
               },
               data: {
