@@ -1,4 +1,3 @@
-import { success } from "zod";
 import prisma from "../config/prisma.js";
 import { calculateAmount } from "../utils/calculater.js";
 
@@ -348,8 +347,8 @@ export const createSubjectSectionRate = async (req, res, next) => {
               semester: semester,
               program: program,
               section: section,
-              year: currentYear,
               subjectId: subjectId,
+              year: currentYear,
               subjectName: subjectName,
               sectionId: sectionId,
               kind: kind,

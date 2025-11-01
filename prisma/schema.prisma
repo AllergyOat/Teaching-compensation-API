@@ -64,7 +64,7 @@ model SemesterTracking {
   program     Program @default(REGULAR_PROGRAM)
   // Section แบ่งเป็น LECTURE กับ LAB
   section     Section @default(LECTURE)
-  year        Int
+  year        Int?
   subjectId   String
   subjectName String
   sectionId   String

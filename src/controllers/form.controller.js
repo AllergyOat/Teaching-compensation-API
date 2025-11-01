@@ -1020,16 +1020,16 @@ export const getSemesterTracking = async (req, res) => {
   try {
     const { semester, year, program, section } = req.query;
 
-    if (!semester || !year) {
+    if (!semester) {
       return res.status(400).json({
-        message: "semester and year are required",
+        message: "semester is required",
       });
     }
 
     // Build where clause for tracking
     const trackingWhere = {
       semester,
-      year: parseInt(year),
+      ...(year && { year: parseInt(year) }), // Filter by year if provided
       ...(program && { program }), // Filter by program if provided
       ...(section && { section }), // Filter by section if provided
     };
