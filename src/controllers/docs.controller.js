@@ -134,7 +134,7 @@ export const generateScheduleDocx = async (req, res) => {
       generatedDateTime: new Date().toLocaleString("th-TH"),
 
       // Multiple schedules from target section (for templates that support arrays)
-      schedules: targetSchedules.map((schedule, index) => ({
+      sch: targetSchedules.map((schedule, index) => ({
         index: index + 1,
         date: formatThaiDate(schedule.date) || "",
         time: schedule.time || "",
