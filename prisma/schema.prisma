@@ -34,6 +34,51 @@ model User {
   emailVerificationTokens EmailVerificationToken[]
   passwordResetOtps       PasswordResetOtp[]
   forms                   Form[]
+  semesterTracking        SemesterTracking[]
+}
+
+model SubjectSectionRate {
+  id                String  @id @default(cuid())
+  subjectId         String
+  subjectName       String
+  semester          String
+  program           Program @default(REGULAR_PROGRAM)
+  // Section แบ่งเป็น LECTURE กับ LAB
+  section           Section @default(LECTURE)
+  //หมู่เรียน
+  sectionId         String
+  kind              Section
+  // ข้อมูล rate และชั่วโมง
+  ratePerHour       Float // อัตราค่าตอบแทนต่อชั่วโมง
+  MaxTotalHours     Float // ชั่วโมงสอนต่อภาคสูงสุดที่เท่าไหร่ (30, 45)
+  teacherTotalHours Float? // ชั่วโมงที่อาจารย์ request ต้องการสอน (ถ้ามี)
+
+  @@unique([subjectId, sectionId, semester, program, section])
+}
+
+model SemesterTracking {
+  id          String  @id @default(cuid())
+  userId      String
+  user        User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  semester    String
+  program     Program @default(REGULAR_PROGRAM)
+  // Section แบ่งเป็น LECTURE กับ LAB
+  section     Section @default(LECTURE)
+  year        Int
+  subjectId   String
+  subjectName String
+  sectionId   String
+  kind        Section
+
+  totalHoursRequired Float // ชั่วโมงที่ต้องสอนทั้งภาค (copy จาก subjectSectionRate.defaultTotalHours)
+  hoursUsed          Float @default(0) // ชั่วโมงที่สอนไปแล้ว
+  hoursRemaining     Float // totalHoursRequired - hoursUsed
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([semester, year, subjectId, sectionId, program, section])
+  @@index([semester, year, program, section])
 }
 
 model EmailVerificationToken {
@@ -83,7 +128,7 @@ model Form {
 
   formScheduleDetails FormSections[]
 
-  @@index([userId])
+  @@index([userId, semester, year])
 }
 
 model FormSections {
@@ -92,6 +137,8 @@ model FormSections {
   form      Form     @relation(fields: [formId], references: [id], onDelete: Cascade)
   sectionId String
   kind      Section? @default(LECTURE)
+
+  totalHours Float?
 
   schedules    Schedule[]
   compensation Compensation[]
@@ -114,7 +161,7 @@ model Compensation {
   id                 String       @id @default(cuid())
   formSectionId      String
   formSection        FormSections @relation(fields: [formSectionId], references: [id], onDelete: Cascade)
-  originalScheduleId String?      // คาบที่ชดเชย
+  originalScheduleId String? // คาบที่ชดเชย
   originalSchedule   Schedule?    @relation(fields: [originalScheduleId], references: [id], onDelete: Cascade)
   originalDate       DateTime
   originalTime       String

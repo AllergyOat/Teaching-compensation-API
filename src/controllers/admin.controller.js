@@ -198,6 +198,262 @@ export const listHome = async (req, res, next) => {
   }
 };
 
+export const createSubjectSectionRate = async (req, res, next) => {
+  try {
+    const UserId = req.user.id;
+    const currentYear = new Date().getFullYear() + 543; // ปีปัจจุบัน (พ.ศ.)
+
+    // Check if request body has 'sections' array or single object
+    const sectionsArray = req.body.sections || [req.body];
+
+    // Validate that we have at least one section
+    if (!sectionsArray || sectionsArray.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "กรุณากรอกข้อมูลอย่างน้อย 1 section",
+      });
+    }
+
+    // Validate all sections
+    const errors = [];
+    sectionsArray.forEach((sectionData, index) => {
+      const {
+        subjectId,
+        subjectName,
+        program,
+        section,
+        sectionId,
+        kind,
+        semester,
+        ratePerHour,
+        maxTotalHours,
+      } = sectionData;
+
+      if (
+        !subjectId ||
+        !subjectName ||
+        !section ||
+        !sectionId ||
+        !kind ||
+        !semester ||
+        !ratePerHour ||
+        !maxTotalHours ||
+        !program
+      ) {
+        errors.push({
+          index,
+          message: "ข้อมูลไม่ครบถ้วนที่ index " + index,
+          data: sectionData,
+        });
+      }
+    });
+
+    if (errors.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: "กรุณากรอกข้อมูลให้ครบถ้วน",
+        errors,
+      });
+    }
+
+    // Process all sections in a transaction
+    const result = await prisma.$transaction(async (tx) => {
+      const createdRates = [];
+      const skippedRates = [];
+      let trackingCreatedCount = 0;
+
+      for (const sectionData of sectionsArray) {
+        const {
+          subjectId,
+          subjectName,
+          program,
+          section,
+          sectionId,
+          kind,
+          semester,
+          ratePerHour,
+          maxTotalHours,
+          teacherTotalHours,
+        } = sectionData;
+
+        // ตรวจสอบว่ามี rate config นี้อยู่แล้วหรือไม่
+        const existingRate = await tx.subjectSectionRate.findUnique({
+          where: {
+            subjectId_sectionId_semester_program_section: {
+              subjectId,
+              sectionId,
+              semester,
+              program,
+              section,
+            },
+          },
+        });
+
+        if (existingRate) {
+          skippedRates.push({
+            subjectId,
+            sectionId,
+            program,
+            section,
+            reason: "มีข้อมูลอยู่แล้ว",
+          });
+          continue;
+        }
+
+        // สร้าง SubjectSectionRate
+        const newRate = await tx.subjectSectionRate.create({
+          data: {
+            subjectId,
+            subjectName,
+            section,
+            sectionId,
+            program,
+            kind,
+            semester,
+            ratePerHour: parseFloat(ratePerHour),
+            MaxTotalHours: parseFloat(maxTotalHours),
+            teacherTotalHours: teacherTotalHours
+              ? parseFloat(teacherTotalHours)
+              : null,
+          },
+        });
+
+        createdRates.push(newRate);
+
+        // สร้าง SemesterTracking สำหรับ user ที่สร้าง rate config
+        const totalHoursToUse = teacherTotalHours
+          ? parseFloat(teacherTotalHours)
+          : parseFloat(maxTotalHours);
+
+        // ตรวจสอบว่ามี tracking อยู่แล้วหรือไม่
+        const existingTracking = await tx.semesterTracking.findUnique({
+          where: {
+            semester_year_subjectId_sectionId_program_section: {
+              semester: semester,
+              year: currentYear,
+              subjectId: subjectId,
+              sectionId: sectionId,
+              program: program,
+              section: section,
+            },
+          },
+        });
+
+        // ถ้ายังไม่มี ให้สร้างใหม่
+        if (!existingTracking) {
+          await tx.semesterTracking.create({
+            data: {
+              userId: UserId,
+              semester: semester,
+              program: program,
+              section: section,
+              year: currentYear,
+              subjectId: subjectId,
+              subjectName: subjectName,
+              sectionId: sectionId,
+              kind: kind,
+              totalHoursRequired: totalHoursToUse,
+              hoursUsed: 0,
+              hoursRemaining: totalHoursToUse,
+            },
+          });
+          trackingCreatedCount++;
+        }
+      }
+
+      return {
+        createdRates,
+        skippedRates,
+        trackingCreatedCount,
+      };
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: `สร้าง rate configuration สำเร็จ ${
+        result.createdRates.length
+      } รายการ${
+        result.skippedRates.length > 0
+          ? `, ข้าม ${result.skippedRates.length} รายการที่มีอยู่แล้ว`
+          : ""
+      }`,
+      data: {
+        created: result.createdRates,
+        skipped: result.skippedRates,
+        trackingCreated: result.trackingCreatedCount,
+      },
+    });
+  } catch (error) {
+    console.error("Error creating subject section rate:", error);
+    return res.status(500).json({
+      success: false,
+      message: "เกิดข้อผิดพลาดในการสร้างข้อมูล",
+      error: error.message,
+    });
+  }
+};
+
+export const editSubjectSectionRate = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const {
+      subjectId,
+      sectionId,
+      semester,
+      program,
+      kind,
+      ratePerHour,
+      maxTotalHours,
+      teacherTotalHours,
+    } = req.body;
+
+    // Validate required fields
+    if (
+      !subjectId ||
+      !sectionId ||
+      !semester ||
+      !ratePerHour ||
+      !maxTotalHours ||
+      !program
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "กรุณากรอกข้อมูลให้ครบถ้วน",
+      });
+    }
+
+    // Update SubjectSectionRate
+    const updatedRate = await prisma.subjectSectionRate.update({
+      where: { id: id },
+      data: {
+        subjectId,
+        sectionId,
+        semester,
+        program,
+        kind,
+        ratePerHour: parseFloat(ratePerHour),
+        MaxTotalHours: parseFloat(maxTotalHours),
+        teacherTotalHours: teacherTotalHours
+          ? parseFloat(teacherTotalHours)
+          : null,
+      },
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "แก้ไขข้อมูล rate configuration สำเร็จ",
+      data: updatedRate,
+    });
+  } catch (error) {
+    console.error("Error editing subject section rate:", error);
+    return res.status(500).json({
+      success: false,
+      message: "เกิดข้อผิดพลาดในการแก้ไขข้อมูล",
+      error: error.message,
+    });
+  }
+};
+
 export const updateFormStatus = async (req, res, next) => {
   try {
     const formId = req.params.id;

@@ -29,6 +29,7 @@ export const formSchema = z.object({
       z.object({
         lectureId: z.string().min(1),
         kind: z.enum(["LECTURE", "LAB"]).default("LECTURE"), // Add kind field
+        totalHours: z.number().positive().optional().nullable(), // Add totalHours for semester tracking
         schedules: z
           .array(
             z.object({
@@ -41,7 +42,7 @@ export const formSchema = z.object({
             })
           )
           .min(1, "At least one schedule is required per section"),
-        
+
         // Optional compensation array for this specific section
         compensation: z
           .array(

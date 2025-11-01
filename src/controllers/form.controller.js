@@ -65,6 +65,7 @@ export const createForm = async (req, res) => {
           formSectionsCreate.push({
             sectionId: detail.lectureId,
             kind: detail.kind || "LECTURE", // Use kind from request body with fallback
+            totalHours: detail.totalHours || null, // Add totalHours for semester tracking
             schedules: {
               create: schedulesForSection,
             },
@@ -176,6 +177,124 @@ export const createForm = async (req, res) => {
         },
       },
     });
+
+    // Validate totalHours for new sections BEFORE creating tracking
+    const sectionsWithoutTotalHours = [];
+    for (const section of completeForm.formScheduleDetails) {
+      // Check if this section already has tracking
+      const existingTracking = await prisma.semesterTracking.findUnique({
+        where: {
+          semester_year_subjectId_sectionId_program_section: {
+            semester: completeForm.semester,
+            year: completeForm.year,
+            subjectId: completeForm.subjectId,
+            sectionId: section.sectionId,
+            program: completeForm.program,
+            section: completeForm.section,
+          },
+        },
+      });
+
+      // If no existing tracking and no totalHours provided, this is an error
+      if (
+        !existingTracking &&
+        (section.totalHours === null || section.totalHours === undefined)
+      ) {
+        sectionsWithoutTotalHours.push(section.sectionId);
+      }
+    }
+
+    // If any new sections are missing totalHours, rollback and return error
+    if (sectionsWithoutTotalHours.length > 0) {
+      // Delete the created form
+      await prisma.form.delete({
+        where: { id: created.id },
+      });
+
+      return res.status(400).json({
+        message: "Cannot create form: totalHours is required for new sections",
+        missingSections: sectionsWithoutTotalHours,
+      });
+    }
+
+    // Update or Create SemesterTracking for each section
+    for (const section of completeForm.formScheduleDetails) {
+      // Calculate hours used in this month
+      const hoursUsedThisMonth = section.schedules.reduce(
+        (sum, schedule) => sum + (schedule.totalHour || 0),
+        0
+      );
+
+      // Skip if no hours used this month
+      if (hoursUsedThisMonth === 0) {
+        continue;
+      }
+
+      // Check if tracking already exists
+      const existingTracking = await prisma.semesterTracking.findUnique({
+        where: {
+          semester_year_subjectId_sectionId_program_section: {
+            semester: completeForm.semester,
+            year: completeForm.year,
+            subjectId: completeForm.subjectId,
+            sectionId: section.sectionId,
+            program: completeForm.program,
+            section: completeForm.section,
+          },
+        },
+      });
+
+      if (existingTracking) {
+        // Update existing tracking (works even without totalHours)
+        await prisma.semesterTracking.update({
+          where: {
+            semester_year_subjectId_sectionId_program_section: {
+              semester: completeForm.semester,
+              year: completeForm.year,
+              subjectId: completeForm.subjectId,
+              sectionId: section.sectionId,
+              program: completeForm.program,
+              section: completeForm.section,
+            },
+          },
+          data: {
+            hoursUsed: {
+              increment: hoursUsedThisMonth,
+            },
+            hoursRemaining: {
+              decrement: hoursUsedThisMonth,
+            },
+            updatedAt: new Date(),
+          },
+        });
+      } else if (
+        section.totalHours !== null &&
+        section.totalHours !== undefined
+      ) {
+        // Create new tracking (requires totalHours)
+        await prisma.semesterTracking.create({
+          data: {
+            userId: completeForm.userId,
+            semester: completeForm.semester,
+            year: completeForm.year,
+            subjectId: completeForm.subjectId,
+            subjectName: completeForm.subjectName,
+            sectionId: section.sectionId,
+            program: completeForm.program, // Add program field
+            section: completeForm.section, // Add section field
+            kind: section.kind || "LECTURE",
+            totalHoursRequired: section.totalHours,
+            hoursUsed: hoursUsedThisMonth,
+            hoursRemaining: section.totalHours - hoursUsedThisMonth,
+          },
+        });
+      } else {
+        // Warning: Cannot create tracking without totalHours
+        console.warn(
+          `Cannot create SemesterTracking for ${completeForm.subjectId} section ${section.sectionId}: totalHours not provided`
+        );
+      }
+    }
 
     return res.status(201).json({ data: completeForm });
   } catch (err) {
@@ -375,6 +494,16 @@ export const editForm = async (req, res) => {
       });
     }
 
+    // Calculate old hours by section BEFORE editing
+    const oldHoursBySection = {};
+    existingForm.formScheduleDetails.forEach((section) => {
+      const hours = section.schedules.reduce(
+        (sum, schedule) => sum + (schedule.totalHour || 0),
+        0
+      );
+      oldHoursBySection[section.sectionId] = hours;
+    });
+
     // Use transaction for atomic updates
     const updated = await prisma.$transaction(async (tx) => {
       // First, delete existing formScheduleDetails to avoid conflicts
@@ -508,6 +637,86 @@ export const editForm = async (req, res) => {
         // Wait for all compensation records to be created
         if (compensationPromises.length > 0) {
           await Promise.all(compensationPromises);
+        }
+      }
+
+      // Calculate new hours by section AFTER editing
+      const newHoursBySection = {};
+      updatedForm.formScheduleDetails.forEach((section) => {
+        const hours = section.schedules.reduce(
+          (sum, schedule) => sum + (schedule.totalHour || 0),
+          0
+        );
+        newHoursBySection[section.sectionId] = hours;
+      });
+
+      // Update SemesterTracking based on the difference
+      const allSectionIds = new Set([
+        ...Object.keys(oldHoursBySection),
+        ...Object.keys(newHoursBySection),
+      ]);
+
+      for (const sectionId of allSectionIds) {
+        const oldHours = oldHoursBySection[sectionId] || 0;
+        const newHours = newHoursBySection[sectionId] || 0;
+        const hoursDifference = newHours - oldHours;
+
+        if (hoursDifference !== 0) {
+          const existingTracking = await tx.semesterTracking.findUnique({
+            where: {
+              userId_semester_year_subjectId_sectionId: {
+                userId: updatedForm.userId,
+                semester: updatedForm.semester,
+                year: updatedForm.year,
+                subjectId: updatedForm.subjectId,
+                sectionId: sectionId,
+              },
+            },
+          });
+
+          if (existingTracking) {
+            await tx.semesterTracking.update({
+              where: {
+                userId_semester_year_subjectId_sectionId: {
+                  userId: updatedForm.userId,
+                  semester: updatedForm.semester,
+                  year: updatedForm.year,
+                  subjectId: updatedForm.subjectId,
+                  sectionId: sectionId,
+                },
+              },
+              data: {
+                hoursUsed: {
+                  increment: hoursDifference,
+                },
+                hoursRemaining: {
+                  decrement: hoursDifference,
+                },
+                updatedAt: new Date(),
+              },
+            });
+          } else if (newHours > 0) {
+            // Create new tracking if this is a new section
+            const section = updatedForm.formScheduleDetails.find(
+              (s) => s.sectionId === sectionId
+            );
+            if (section && section.totalHours) {
+              await tx.semesterTracking.create({
+                data: {
+                  userId: updatedForm.userId,
+                  semester: updatedForm.semester,
+                  year: updatedForm.year,
+                  subjectId: updatedForm.subjectId,
+                  subjectName: updatedForm.subjectName,
+                  sectionId: sectionId,
+                  kind: section.kind || "LECTURE",
+                  totalHoursRequired: section.totalHours,
+                  hoursUsed: newHours,
+                  hoursRemaining: section.totalHours - newHours,
+                },
+              });
+            }
+          }
         }
       }
 
@@ -671,14 +880,15 @@ export const deleteForm = async (req, res) => {
       return res.status(400).json({ message: "Form ID is required" });
     }
 
-    // Find existing form
+    // Find existing form with all sections and schedules
     const existingForm = await prisma.form.findUnique({
       where: { id: formId },
-      select: {
-        id: true,
-        userId: true,
-        subjectName: true,
-        user: { select: { role: true } },
+      include: {
+        formScheduleDetails: {
+          include: {
+            schedules: true,
+          },
+        },
       },
     });
 
@@ -697,9 +907,90 @@ export const deleteForm = async (req, res) => {
       });
     }
 
-    // Delete form (cascade will handle related records)
-    await prisma.form.delete({
-      where: { id: formId },
+    // Calculate hours to remove from tracking BEFORE deleting
+    const trackingUpdates = [];
+    for (const section of existingForm.formScheduleDetails) {
+      const hoursToRemove = section.schedules.reduce(
+        (sum, schedule) => sum + (schedule.totalHour || 0),
+        0
+      );
+
+      if (hoursToRemove > 0) {
+        trackingUpdates.push({
+          userId: existingForm.userId,
+          semester: existingForm.semester,
+          year: existingForm.year,
+          subjectId: existingForm.subjectId,
+          sectionId: section.sectionId,
+          hoursToRemove,
+        });
+      }
+    }
+
+    // Use transaction to ensure atomicity
+    await prisma.$transaction(async (tx) => {
+      // Delete form (cascade will handle related records)
+      await tx.form.delete({
+        where: { id: formId },
+      });
+
+      // Update SemesterTracking - reduce hours
+      for (const update of trackingUpdates) {
+        const existingTracking = await tx.semesterTracking.findUnique({
+          where: {
+            userId_semester_year_subjectId_sectionId: {
+              userId: update.userId,
+              semester: update.semester,
+              year: update.year,
+              subjectId: update.subjectId,
+              sectionId: update.sectionId,
+            },
+          },
+        });
+
+        if (existingTracking) {
+          // Calculate what hours would remain after removing this form's hours
+          const remainingHoursAfterDelete =
+            existingTracking.hoursUsed - update.hoursToRemove;
+
+          if (remainingHoursAfterDelete <= 0) {
+            // If no hours left, delete the tracking record
+            await tx.semesterTracking.delete({
+              where: {
+                userId_semester_year_subjectId_sectionId: {
+                  userId: update.userId,
+                  semester: update.semester,
+                  year: update.year,
+                  subjectId: update.subjectId,
+                  sectionId: update.sectionId,
+                },
+              },
+            });
+          } else {
+            // Otherwise, just reduce the hours
+            await tx.semesterTracking.update({
+              where: {
+                userId_semester_year_subjectId_sectionId: {
+                  userId: update.userId,
+                  semester: update.semester,
+                  year: update.year,
+                  subjectId: update.subjectId,
+                  sectionId: update.sectionId,
+                },
+              },
+              data: {
+                hoursUsed: {
+                  decrement: update.hoursToRemove,
+                },
+                hoursRemaining: {
+                  increment: update.hoursToRemove,
+                },
+                updatedAt: new Date(),
+              },
+            });
+          }
+        }
+      }
     });
 
     return res.status(200).json({
@@ -713,6 +1004,64 @@ export const deleteForm = async (req, res) => {
       return res.status(404).json({ message: "Form not found" });
     }
 
+    return res.status(500).json({
+      message: "Internal Server Error",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+};
+
+export const getSemesterTracking = async (req, res) => {
+  try {
+    const { semester, year, program, section } = req.query;
+
+    if (!semester || !year) {
+      return res.status(400).json({
+        message: "semester and year are required",
+      });
+    }
+
+    // Build where clause for tracking
+    const trackingWhere = {
+      semester,
+      year: parseInt(year),
+      ...(program && { program }), // Filter by program if provided
+      ...(section && { section }), // Filter by section if provided
+    };
+
+    // Get tracking records directly with program filter
+    const trackings = await prisma.semesterTracking.findMany({
+      where: trackingWhere,
+      orderBy: [{ subjectId: "asc" }, { sectionId: "asc" }],
+    });
+
+    // Group by subject and use program from tracking
+    const groupedBySubject = trackings.reduce((acc, track) => {
+      if (!acc[track.subjectId]) {
+        acc[track.subjectId] = {
+          subjectId: track.subjectId,
+          subjectName: track.subjectName,
+          program: track.program, // Use program from SemesterTracking
+          semester: track.semester,
+          section: track.section,
+          sections: [],
+        };
+      }
+      acc[track.subjectId].sections.push({
+        sectionId: track.sectionId,
+        kind: track.kind,
+        totalHoursRequired: track.totalHoursRequired,
+        hoursUsed: track.hoursUsed,
+        hoursRemaining: track.hoursRemaining,
+      });
+      return acc;
+    }, {});
+
+    return res.status(200).json({
+      data: Object.values(groupedBySubject),
+    });
+  } catch (error) {
+    console.error("getSemesterTracking error:", error);
     return res.status(500).json({
       message: "Internal Server Error",
       error: process.env.NODE_ENV === "development" ? error.message : undefined,
