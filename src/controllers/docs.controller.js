@@ -112,8 +112,8 @@ export const generateScheduleDocx = async (req, res) => {
       semester: form.semester || "",
       year: form.year || "",
       subjectName: form.subjectName || "",
-      lectureId: targetSection?.kind === "LECTURE" ? targetSectionId : "",
-      labId: targetSection?.kind === "LAB" ? targetSectionId : "",
+      lectureId: form.section === "LECTURE" ? targetSectionId : "",
+      labId: form.section === "LAB" ? targetSectionId : "",
       id: 1,
 
       date:
