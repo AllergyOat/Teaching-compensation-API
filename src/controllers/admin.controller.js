@@ -1,3 +1,4 @@
+import { success } from "zod";
 import prisma from "../config/prisma.js";
 import { calculateAmount } from "../utils/calculater.js";
 
@@ -396,54 +397,251 @@ export const createSubjectSectionRate = async (req, res, next) => {
 export const editSubjectSectionRate = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const {
-      subjectId,
-      sectionId,
-      semester,
-      program,
-      kind,
-      ratePerHour,
-      maxTotalHours,
-      teacherTotalHours,
-    } = req.body;
 
-    // Validate required fields
-    if (
-      !subjectId ||
-      !sectionId ||
-      !semester ||
-      !ratePerHour ||
-      !maxTotalHours ||
-      !program
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "กรุณากรอกข้อมูลให้ครบถ้วน",
+    // Check if request body has 'sections' array (bulk update) or single object
+    const isBulkUpdate = req.body.sections && Array.isArray(req.body.sections);
+
+    if (isBulkUpdate) {
+      // Bulk update multiple sections
+      const sectionsArray = req.body.sections;
+
+      if (sectionsArray.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: "กรุณากรอกข้อมูลอย่างน้อย 1 section",
+        });
+      }
+
+      // Get the original subject info from id
+      const originalRate = await prisma.subjectSectionRate.findUnique({
+        where: { id: id },
       });
-    }
 
-    // Update SubjectSectionRate
-    const updatedRate = await prisma.subjectSectionRate.update({
-      where: { id: id },
-      data: {
+      if (!originalRate) {
+        return res.status(404).json({
+          success: false,
+          message: "ไม่พบข้อมูล SubjectSectionRate ที่ต้องการแก้ไข",
+        });
+      }
+
+      const oldSubjectId = originalRate.subjectId;
+
+      // Validate all sections
+      const errors = [];
+      let newSubjectId = null;
+
+      sectionsArray.forEach((sectionData, index) => {
+        const {
+          subjectId,
+          subjectName,
+          sectionId,
+          semester,
+          program,
+          section,
+          kind,
+          ratePerHour,
+          maxTotalHours,
+        } = sectionData;
+
+        if (
+          !subjectId ||
+          !subjectName ||
+          !sectionId ||
+          !semester ||
+          !program ||
+          !section ||
+          !kind ||
+          ratePerHour === undefined ||
+          maxTotalHours === undefined
+        ) {
+          errors.push({
+            index,
+            message: "ข้อมูลไม่ครบถ้วนที่ index " + index,
+            data: sectionData,
+          });
+        }
+
+        // Validate that all sections in the same request have the same subjectId
+        if (newSubjectId === null) {
+          newSubjectId = subjectId;
+        } else if (subjectId !== newSubjectId) {
+          errors.push({
+            index,
+            message: `subjectId ไม่สอดคล้องกันในคำขอเดียวกัน (ได้รับ: ${subjectId}, คาดหวัง: ${newSubjectId})`,
+            data: sectionData,
+          });
+        }
+      });
+
+      if (errors.length > 0) {
+        return res.status(400).json({
+          success: false,
+          message: "กรุณากรอกข้อมูลให้ครบถ้วนและถูกต้อง",
+          errors,
+        });
+      }
+
+      // Process bulk update in transaction: DELETE all old records, CREATE new ones
+      const result = await prisma.$transaction(async (tx) => {
+        // 1. Get all old records for logging
+        const oldRecords = await tx.subjectSectionRate.findMany({
+          where: {
+            subjectId: oldSubjectId,
+          },
+        });
+
+        // 2. Delete all old records with the old subjectId
+        const deleteResult = await tx.subjectSectionRate.deleteMany({
+          where: {
+            subjectId: oldSubjectId,
+          },
+        });
+
+        // 3. Create new records from the submitted data
+        const createdRates = [];
+
+        for (const sectionData of sectionsArray) {
+          const {
+            subjectId,
+            subjectName,
+            sectionId,
+            semester,
+            program,
+            section,
+            kind,
+            ratePerHour,
+            maxTotalHours,
+            teacherTotalHours,
+          } = sectionData;
+
+          const newRate = await tx.subjectSectionRate.create({
+            data: {
+              subjectId,
+              subjectName,
+              sectionId,
+              semester,
+              program,
+              section,
+              kind,
+              ratePerHour: parseFloat(ratePerHour),
+              MaxTotalHours: parseFloat(maxTotalHours),
+              teacherTotalHours: teacherTotalHours
+                ? parseFloat(teacherTotalHours)
+                : null,
+            },
+          });
+
+          createdRates.push(newRate);
+        }
+
+        return { 
+          deletedCount: deleteResult.count,
+          deletedRecords: oldRecords,
+          createdRates 
+        };
+      });
+
+      return res.status(200).json({
+        success: true,
+        message: `แก้ไขข้อมูล rate configuration สำเร็จ (ลบ ${result.deletedCount} รายการเก่า, สร้าง ${result.createdRates.length} รายการใหม่)`,
+        data: {
+          oldSubjectId: oldSubjectId,
+          newSubjectId: newSubjectId,
+          deleted: result.deletedCount,
+          created: result.createdRates,
+        },
+      });
+    } else {
+      // Single update using id from params
+      const {
         subjectId,
+        subjectName,
         sectionId,
         semester,
         program,
+        section,
         kind,
-        ratePerHour: parseFloat(ratePerHour),
-        MaxTotalHours: parseFloat(maxTotalHours),
-        teacherTotalHours: teacherTotalHours
-          ? parseFloat(teacherTotalHours)
-          : null,
-      },
-    });
+        ratePerHour,
+        maxTotalHours,
+        teacherTotalHours,
+      } = req.body;
 
-    return res.status(200).json({
-      success: true,
-      message: "แก้ไขข้อมูล rate configuration สำเร็จ",
-      data: updatedRate,
-    });
+      // Validate required fields
+      if (
+        !subjectId ||
+        !subjectName ||
+        !sectionId ||
+        !semester ||
+        !program ||
+        !section ||
+        !kind ||
+        !ratePerHour ||
+        !maxTotalHours
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "กรุณากรอกข้อมูลให้ครบถ้วน",
+        });
+      }
+
+      // Check if the record exists
+      const existingRate = await prisma.subjectSectionRate.findUnique({
+        where: { id: id },
+      });
+
+      if (!existingRate) {
+        return res.status(404).json({
+          success: false,
+          message: "ไม่พบข้อมูล SubjectSectionRate",
+        });
+      }
+
+      // Check if updating to duplicate unique constraint
+      const duplicateCheck = await prisma.subjectSectionRate.findUnique({
+        where: {
+          subjectId_sectionId_semester_program_section: {
+            subjectId,
+            sectionId,
+            semester,
+            program,
+            section,
+          },
+        },
+      });
+
+      // If found duplicate and it's not the current record
+      if (duplicateCheck && duplicateCheck.id !== id) {
+        return res.status(400).json({
+          success: false,
+          message: "มีข้อมูลนี้อยู่ในระบบแล้ว ไม่สามารถแก้ไขให้ซ้ำกันได้",
+        });
+      }
+
+      // Update SubjectSectionRate
+      const updatedRate = await prisma.subjectSectionRate.update({
+        where: { id: id },
+        data: {
+          subjectId,
+          subjectName,
+          sectionId,
+          semester,
+          program,
+          section,
+          kind,
+          ratePerHour: parseFloat(ratePerHour),
+          MaxTotalHours: parseFloat(maxTotalHours),
+          teacherTotalHours: teacherTotalHours
+            ? parseFloat(teacherTotalHours)
+            : null,
+        },
+      });
+
+      return res.status(200).json({
+        success: true,
+        message: "แก้ไขข้อมูล rate configuration สำเร็จ",
+        data: updatedRate,
+      });
+    }
   } catch (error) {
     console.error("Error editing subject section rate:", error);
     return res.status(500).json({
@@ -453,6 +651,207 @@ export const editSubjectSectionRate = async (req, res, next) => {
     });
   }
 };
+
+export const deleteSubjectSectionRate = async(req,res,next) =>{
+  try {
+    const { id } = req.params;
+
+    // Get the specific subject section rate by id
+    const subjectRate = await prisma.subjectSectionRate.findUnique({
+      where: { id: id }
+    });
+
+    if (!subjectRate) {
+      return res.status(404).json({
+        success: false,
+        message: "ไม่พบข้อมูล SubjectSectionRate ที่ต้องการลบ",
+      });
+    }
+
+    const subjectIdToDelete = subjectRate.subjectId;
+
+    // Delete all records with the same subjectId in transaction
+    const result = await prisma.$transaction(async (tx) => {
+      // Get all records that will be deleted
+      const recordsToDelete = await tx.subjectSectionRate.findMany({
+        where: {
+          subjectId: subjectIdToDelete,
+        },
+      });
+
+      // Delete all records with same subjectId
+      const deleteResult = await tx.subjectSectionRate.deleteMany({
+        where: {
+          subjectId: subjectIdToDelete,
+        },
+      });
+
+      return {
+        deletedCount: deleteResult.count,
+        deletedRecords: recordsToDelete,
+      };
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: `ลบข้อมูล SubjectSectionRate สำเร็จ ${result.deletedCount} รายการ`,
+      data: {
+        subjectId: subjectIdToDelete,
+        deletedCount: result.deletedCount,
+        deletedRecords: result.deletedRecords,
+      },
+    });
+
+  } catch (error) {
+    console.error("Error deleting subject section rate:", error);
+    return res.status(500).json({
+      success: false,
+      message: "เกิดข้อผิดพลาดในการลบข้อมูล",
+      error: error.message,
+    });
+  }
+}
+
+export const listSubjectSectionRates = async(req,res,next) =>{
+  try {
+    const { semester } = req.query;
+
+    // Build where clause
+    const whereClause = {};
+    if (semester) {
+      whereClause.semester = semester;
+    }
+
+    // Get subject section rates with optional semester filter
+    const subjectRates = await prisma.subjectSectionRate.findMany({
+      where: whereClause,
+      orderBy: [
+        { subjectId: 'asc' },
+        { program: 'asc' },
+        { semester: 'asc' },
+        { section: 'asc' },
+        { sectionId: 'asc' }
+      ]
+    });
+
+    // Group by subjectId, subjectName, program, semester, and section
+    const groupedData = {};
+    
+    subjectRates.forEach(rate => {
+      const groupKey = `${rate.subjectId}_${rate.program}_${rate.semester}_${rate.section}`;
+      
+      if (!groupedData[groupKey]) {
+        groupedData[groupKey] = {
+          id: rate.id, // เพิ่ม id ของ record แรกในกลุ่ม
+          subjectId: rate.subjectId,
+          subjectName: rate.subjectName,
+          program: rate.program,
+          semester: rate.semester,
+          section: rate.section,
+          sections: []
+        };
+      }
+
+
+      groupedData[groupKey].sections.push({
+        id: rate.id, // เพิ่ม id ของแต่ละ section
+        sectionId: rate.sectionId,
+        kind: rate.kind,
+        MaxTotalHours: rate.MaxTotalHours,
+        ratePerHour: rate.ratePerHour,
+        teacherTotalHours: rate.teacherTotalHours,
+      });
+    });
+
+    // Convert to array
+    const data = Object.values(groupedData);
+
+    res.json({
+      success: true,
+      data
+    })
+  } catch (error) {
+    console.error("Error get subject section rate:", error);
+    return res.status(500).json({
+      success: false,
+      message: "เกิดข้อผิดพลาดในการโหลดข้อมูล",
+      error: error.message,
+    });
+  }
+}
+
+export const getSubjectSectionRateById = async(req,res,next) =>{
+  try {
+    const { id } = req.params;
+
+    // Get the specific subject section rate by id
+    const subjectRate = await prisma.subjectSectionRate.findUnique({
+      where: { id: id }
+    });
+
+    if (!subjectRate) {
+      return res.status(404).json({
+        success: false,
+        message: "ไม่พบข้อมูล SubjectSectionRate",
+      });
+    }
+
+    // Get all sections with same subjectId
+    const allRates = await prisma.subjectSectionRate.findMany({
+      where: {
+        subjectId: subjectRate.subjectId,
+      },
+      orderBy: [
+        { program: 'asc' },
+        { semester: 'asc' },
+        { section: 'asc' },
+        { sectionId: 'asc' }
+      ]
+    });
+
+    // Group by program, semester, and section
+    const groupedData = {};
+    
+    allRates.forEach(rate => {
+      const groupKey = `${rate.program}_${rate.semester}_${rate.section}`;
+      
+      if (!groupedData[groupKey]) {
+        groupedData[groupKey] = {
+          subjectId: rate.subjectId,
+          subjectName: rate.subjectName,
+          program: rate.program,
+          semester: rate.semester,
+          section: rate.section,
+          sections: []
+        };
+      }
+
+      groupedData[groupKey].sections.push({
+        id: rate.id,
+        sectionId: rate.sectionId,
+        kind: rate.kind,
+        MaxTotalHours: rate.MaxTotalHours,
+        ratePerHour: rate.ratePerHour,
+        teacherTotalHours: rate.teacherTotalHours,
+      });
+    });
+
+    // Convert to array
+    const data = Object.values(groupedData);
+
+    res.json({
+      success: true,
+      data
+    });
+  } catch (error) {
+    console.error("Error get subject section rate by id:", error);
+    return res.status(500).json({
+      success: false,
+      message: "เกิดข้อผิดพลาดในการโหลดข้อมูล",
+      error: error.message,
+    });
+  }
+}
 
 export const updateFormStatus = async (req, res, next) => {
   try {
