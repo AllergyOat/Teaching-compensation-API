@@ -15,6 +15,48 @@ import ThaiBahtText from "thai-baht-text";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Helper function to split time range at 16:30
+const splitTimeAt1630 = (timeStr) => {
+  if (!timeStr) return { regular: "", overtime: "" };
+
+  const match = timeStr.match(
+    /(\d{1,2})[:.\ ](\d{2})\s*[-–]\s*(\d{1,2})[:.\ ](\d{2})/
+  );
+  if (!match) return { regular: timeStr, overtime: "" };
+
+  const startHour = parseInt(match[1]);
+  const startMin = parseInt(match[2]);
+  const endHour = parseInt(match[3]);
+  const endMin = parseInt(match[4]);
+
+  // Convert to minutes for comparison
+  const startTimeInMin = startHour * 60 + startMin;
+  const endTimeInMin = endHour * 60 + endMin;
+  const cutoffTimeInMin = 16 * 60 + 30; // 16:30
+
+  // If end time is before or at 16:30, no split needed
+  if (endTimeInMin <= cutoffTimeInMin) {
+    return { regular: timeStr, overtime: "" };
+  }
+
+  // If start time is after 16:30, entire time is overtime
+  if (startTimeInMin >= cutoffTimeInMin) {
+    return { regular: "", overtime: timeStr };
+  }
+
+  // Split at 16:30
+  const regularEnd = "16:30";
+  const overtimeStart = "16:30";
+  const overtimeEnd = `${String(endHour).padStart(2, "0")}:${String(
+    endMin
+  ).padStart(2, "0")}`;
+
+  return {
+    regular: `${match[1]}:${match[2]}-${regularEnd}`,
+    overtime: `${overtimeStart}-${overtimeEnd}`,
+  };
+};
+
 //========= INPUT SECTION ==========
 export const generateScheduleDocx = async (req, res) => {
   try {
@@ -530,17 +572,23 @@ export const generateDocx = async (req, res) => {
     const user = form.user;
     const userName = `${user.firstName || ""} ${user.lastName || ""}`.trim();
 
+    // Split schedule times at 16:30 for regular and overtime (must be before compensationHours calculation)
+    const splitSchedules = schedules.map((schedule) => {
+      if (!schedule) return { regular: "", overtime: "" };
+      return splitTimeAt1630(schedule.time);
+    });
+
     // Calculate total hours from schedules
     const totalHours = schedules.reduce((sum, schedule) => {
       return sum + (parseFloat(schedule.totalHour) || 0);
     }, 0);
 
-    // Calculate compensation hours for each compensation (ch1-6)
-    const compensationHours = compensations.map((comp) =>
-      calculateTotalHours(comp.newTime)
+    // Calculate compensation hours for each overtime split (ch1-6)
+    const compensationHours = splitSchedules.map((split) =>
+      split.overtime ? calculateTotalHours(split.overtime) : 0
     );
 
-    // Calculate total compensation hours
+    // Calculate total compensation hours from overtime splits
     const totalCompensationHours = compensationHours.reduce(
       (sum, hours) => sum + hours,
       0
@@ -623,181 +671,169 @@ export const generateDocx = async (req, res) => {
         return { start: match[1], end: match[2] };
       },
 
-      // Lecture start times (lec1-6) - show start time if section is LECTURE, else "-"
-      lec1: schedules[0]
-        ? targetSection.kind === "LECTURE"
-          ? schedules[0].time.match(
-              /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
-            )?.[1] || schedules[0].time
-          : ""
-        : "",
-      lec2: schedules[1]
-        ? targetSection.kind === "LECTURE"
-          ? schedules[1].time.match(
-              /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
-            )?.[1] || schedules[1].time
-          : ""
-        : "",
-      lec3: schedules[2]
-        ? targetSection.kind === "LECTURE"
-          ? schedules[2].time.match(
-              /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
-            )?.[1] || schedules[2].time
-          : ""
-        : "",
-      lec4: schedules[3]
-        ? targetSection.kind === "LECTURE"
-          ? schedules[3].time.match(
-              /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
-            )?.[1] || schedules[3].time
-          : ""
-        : "",
-      lec5: schedules[4]
-        ? targetSection.kind === "LECTURE"
-          ? schedules[4].time.match(
-              /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
-            )?.[1] || schedules[4].time
-          : ""
-        : "",
-      lec6: schedules[5]
-        ? targetSection.kind === "LECTURE"
-          ? schedules[5].time.match(
-              /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
-            )?.[1] || schedules[5].time
-          : ""
-        : "",
+      // Lecture start times (lec1-6) - show start time from regular period if section is LECTURE
+      lec1:
+        schedules[0] && targetSection.kind === "LECTURE"
+          ? splitSchedules[0].regular.match(/(\d{1,2}[:.]\d{2})/)?.[1] || ""
+          : "",
+      lec2:
+        schedules[1] && targetSection.kind === "LECTURE"
+          ? splitSchedules[1].regular.match(/(\d{1,2}[:.]\d{2})/)?.[1] || ""
+          : "",
+      lec3:
+        schedules[2] && targetSection.kind === "LECTURE"
+          ? splitSchedules[2].regular.match(/(\d{1,2}[:.]\d{2})/)?.[1] || ""
+          : "",
+      lec4:
+        schedules[3] && targetSection.kind === "LECTURE"
+          ? splitSchedules[3].regular.match(/(\d{1,2}[:.]\d{2})/)?.[1] || ""
+          : "",
+      lec5:
+        schedules[4] && targetSection.kind === "LECTURE"
+          ? splitSchedules[4].regular.match(/(\d{1,2}[:.]\d{2})/)?.[1] || ""
+          : "",
+      lec6:
+        schedules[5] && targetSection.kind === "LECTURE"
+          ? splitSchedules[5].regular.match(/(\d{1,2}[:.]\d{2})/)?.[1] || ""
+          : "",
 
-      // Lecture end times (lec11-66) - show end time with "น." if section is LECTURE, else "-"
-      lec11: schedules[0]
-        ? targetSection.kind === "LECTURE"
-          ? (schedules[0].time.match(
-              /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
-            )?.[2] || "") + (schedules[0].time.includes("-") ? " น." : "")
-          : ""
-        : "",
-      lec22: schedules[1]
-        ? targetSection.kind === "LECTURE"
-          ? (schedules[1].time.match(
-              /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
-            )?.[2] || "") + (schedules[1].time.includes("-") ? " น." : "")
-          : ""
-        : "",
-      lec33: schedules[2]
-        ? targetSection.kind === "LECTURE"
-          ? (schedules[2].time.match(
-              /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
-            )?.[2] || "") + (schedules[2].time.includes("-") ? " น." : "")
-          : ""
-        : "",
-      lec44: schedules[3]
-        ? targetSection.kind === "LECTURE"
-          ? (schedules[3].time.match(
-              /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
-            )?.[2] || "") + (schedules[3].time.includes("-") ? " น." : "")
-          : ""
-        : "",
-      lec55: schedules[4]
-        ? targetSection.kind === "LECTURE"
-          ? (schedules[4].time.match(
-              /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
-            )?.[2] || "") + (schedules[4].time.includes("-") ? " น." : "")
-          : ""
-        : "",
-      lec66: schedules[5]
-        ? targetSection.kind === "LECTURE"
-          ? (schedules[5].time.match(
-              /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
-            )?.[2] || "") + (schedules[5].time.includes("-") ? " น." : "")
-          : ""
-        : "",
+      // Lecture end times (lec11-66) - show end time from regular period with "น." if section is LECTURE
+      lec11:
+        schedules[0] &&
+        targetSection.kind === "LECTURE" &&
+        splitSchedules[0].regular
+          ? (splitSchedules[0].regular.match(
+              /[-–]\s*(\d{1,2}[:.]\d{2})/
+            )?.[1] || "") + " น."
+          : "",
+      lec22:
+        schedules[1] &&
+        targetSection.kind === "LECTURE" &&
+        splitSchedules[1].regular
+          ? (splitSchedules[1].regular.match(
+              /[-–]\s*(\d{1,2}[:.]\d{2})/
+            )?.[1] || "") + " น."
+          : "",
+      lec33:
+        schedules[2] &&
+        targetSection.kind === "LECTURE" &&
+        splitSchedules[2].regular
+          ? (splitSchedules[2].regular.match(
+              /[-–]\s*(\d{1,2}[:.]\d{2})/
+            )?.[1] || "") + " น."
+          : "",
+      lec44:
+        schedules[3] &&
+        targetSection.kind === "LECTURE" &&
+        splitSchedules[3].regular
+          ? (splitSchedules[3].regular.match(
+              /[-–]\s*(\d{1,2}[:.]\d{2})/
+            )?.[1] || "") + " น."
+          : "",
+      lec55:
+        schedules[4] &&
+        targetSection.kind === "LECTURE" &&
+        splitSchedules[4].regular
+          ? (splitSchedules[4].regular.match(
+              /[-–]\s*(\d{1,2}[:.]\d{2})/
+            )?.[1] || "") + " น."
+          : "",
+      lec66:
+        schedules[5] &&
+        targetSection.kind === "LECTURE" &&
+        splitSchedules[5].regular
+          ? (splitSchedules[5].regular.match(
+              /[-–]\s*(\d{1,2}[:.]\d{2})/
+            )?.[1] || "") + " น."
+          : "",
 
-      // Lab start times (lab1-6) - show start time if section is LAB, else "-"
-      lab1: schedules[0]
-        ? targetSection.kind === "LAB"
-          ? schedules[0].time.match(
-              /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
-            )?.[1] || schedules[0].time
-          : ""
-        : "",
-      lab2: schedules[1]
-        ? targetSection.kind === "LAB"
-          ? schedules[1].time.match(
-              /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
-            )?.[1] || schedules[1].time
-          : ""
-        : "",
-      lab3: schedules[2]
-        ? targetSection.kind === "LAB"
-          ? schedules[2].time.match(
-              /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
-            )?.[1] || schedules[2].time
-          : ""
-        : "",
-      lab4: schedules[3]
-        ? targetSection.kind === "LAB"
-          ? schedules[3].time.match(
-              /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
-            )?.[1] || schedules[3].time
-          : ""
-        : "",
-      lab5: schedules[4]
-        ? targetSection.kind === "LAB"
-          ? schedules[4].time.match(
-              /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
-            )?.[1] || schedules[4].time
-          : ""
-        : "",
-      lab6: schedules[5]
-        ? targetSection.kind === "LAB"
-          ? schedules[5].time.match(
-              /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
-            )?.[1] || schedules[5].time
-          : ""
-        : "",
+      // Lab start times (lab1-6) - show start time from regular period if section is LAB
+      lab1:
+        schedules[0] &&
+        targetSection.kind === "LAB" &&
+        splitSchedules[0].regular
+          ? splitSchedules[0].regular.match(/(\d{1,2}[:.]\d{2})/)?.[1] || ""
+          : "",
+      lab2:
+        schedules[1] &&
+        targetSection.kind === "LAB" &&
+        splitSchedules[1].regular
+          ? splitSchedules[1].regular.match(/(\d{1,2}[:.]\d{2})/)?.[1] || ""
+          : "",
+      lab3:
+        schedules[2] &&
+        targetSection.kind === "LAB" &&
+        splitSchedules[2].regular
+          ? splitSchedules[2].regular.match(/(\d{1,2}[:.]\d{2})/)?.[1] || ""
+          : "",
+      lab4:
+        schedules[3] &&
+        targetSection.kind === "LAB" &&
+        splitSchedules[3].regular
+          ? splitSchedules[3].regular.match(/(\d{1,2}[:.]\d{2})/)?.[1] || ""
+          : "",
+      lab5:
+        schedules[4] &&
+        targetSection.kind === "LAB" &&
+        splitSchedules[4].regular
+          ? splitSchedules[4].regular.match(/(\d{1,2}[:.]\d{2})/)?.[1] || ""
+          : "",
+      lab6:
+        schedules[5] &&
+        targetSection.kind === "LAB" &&
+        splitSchedules[5].regular
+          ? splitSchedules[5].regular.match(/(\d{1,2}[:.]\d{2})/)?.[1] || ""
+          : "",
 
-      // Lab end times (lab11-66) - show end time with "น." if section is LAB, else "-"
-      lab11: schedules[0]
-        ? targetSection.kind === "LAB"
-          ? (schedules[0].time.match(
-              /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
-            )?.[2] || "") + (schedules[0].time.includes("-") ? " น." : "")
-          : ""
-        : "",
-      lab22: schedules[1]
-        ? targetSection.kind === "LAB"
-          ? (schedules[1].time.match(
-              /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
-            )?.[2] || "") + (schedules[1].time.includes("-") ? " น." : "")
-          : ""
-        : "",
-      lab33: schedules[2]
-        ? targetSection.kind === "LAB"
-          ? (schedules[2].time.match(
-              /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
-            )?.[2] || "") + (schedules[2].time.includes("-") ? " น." : "")
-          : ""
-        : "",
-      lab44: schedules[3]
-        ? targetSection.kind === "LAB"
-          ? (schedules[3].time.match(
-              /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
-            )?.[2] || "") + (schedules[3].time.includes("-") ? " น." : "")
-          : ""
-        : "",
-      lab55: schedules[4]
-        ? targetSection.kind === "LAB"
-          ? (schedules[4].time.match(
-              /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
-            )?.[2] || "") + (schedules[4].time.includes("-") ? " น." : "")
-          : ""
-        : "",
-      lab66: schedules[5]
-        ? targetSection.kind === "LAB"
-          ? (schedules[5].time.match(
-              /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
-            )?.[2] || "") + (schedules[5].time.includes("-") ? " น." : "")
-          : ""
-        : "",
+      // Lab end times (lab11-66) - show end time from regular period with "น." if section is LAB
+      lab11:
+        schedules[0] &&
+        targetSection.kind === "LAB" &&
+        splitSchedules[0].regular
+          ? (splitSchedules[0].regular.match(
+              /[-–]\s*(\d{1,2}[:.]\d{2})/
+            )?.[1] || "") + " น."
+          : "",
+      lab22:
+        schedules[1] &&
+        targetSection.kind === "LAB" &&
+        splitSchedules[1].regular
+          ? (splitSchedules[1].regular.match(
+              /[-–]\s*(\d{1,2}[:.]\d{2})/
+            )?.[1] || "") + " น."
+          : "",
+      lab33:
+        schedules[2] &&
+        targetSection.kind === "LAB" &&
+        splitSchedules[2].regular
+          ? (splitSchedules[2].regular.match(
+              /[-–]\s*(\d{1,2}[:.]\d{2})/
+            )?.[1] || "") + " น."
+          : "",
+      lab44:
+        schedules[3] &&
+        targetSection.kind === "LAB" &&
+        splitSchedules[3].regular
+          ? (splitSchedules[3].regular.match(
+              /[-–]\s*(\d{1,2}[:.]\d{2})/
+            )?.[1] || "") + " น."
+          : "",
+      lab55:
+        schedules[4] &&
+        targetSection.kind === "LAB" &&
+        splitSchedules[4].regular
+          ? (splitSchedules[4].regular.match(
+              /[-–]\s*(\d{1,2}[:.]\d{2})/
+            )?.[1] || "") + " น."
+          : "",
+      lab66:
+        schedules[5] &&
+        targetSection.kind === "LAB" &&
+        splitSchedules[5].regular
+          ? (splitSchedules[5].regular.match(
+              /[-–]\s*(\d{1,2}[:.]\d{2})/
+            )?.[1] || "") + " น."
+          : "",
 
       // Hours (h1-6)
       h1: schedules[0] ? schedules[0].totalHour : "",
@@ -807,195 +843,183 @@ export const generateDocx = async (req, res) => {
       h5: schedules[4] ? schedules[4].totalHour : "",
       h6: schedules[5] ? schedules[5].totalHour : "",
 
-      // Compensation lecture start times (cle1-6) - show start time if section is LECTURE, else "-"
-      cle1: compensations[0]
-        ? targetSection.kind === "LECTURE"
-          ? compensations[0].newTime.match(
-              /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
-            )?.[1] || compensations[0].newTime
-          : ""
-        : "",
-      cle2: compensations[1]
-        ? targetSection.kind === "LECTURE"
-          ? compensations[1].newTime.match(
-              /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
-            )?.[1] || compensations[1].newTime
-          : ""
-        : "",
-      cle3: compensations[2]
-        ? targetSection.kind === "LECTURE"
-          ? compensations[2].newTime.match(
-              /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
-            )?.[1] || compensations[2].newTime
-          : ""
-        : "",
-      cle4: compensations[3]
-        ? targetSection.kind === "LECTURE"
-          ? compensations[3].newTime.match(
-              /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
-            )?.[1] || compensations[3].newTime
-          : ""
-        : "",
-      cle5: compensations[4]
-        ? targetSection.kind === "LECTURE"
-          ? compensations[4].newTime.match(
-              /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
-            )?.[1] || compensations[4].newTime
-          : ""
-        : "",
-      cle6: compensations[5]
-        ? targetSection.kind === "LECTURE"
-          ? compensations[5].newTime.match(
-              /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
-            )?.[1] || compensations[5].newTime
-          : ""
-        : "",
+      // Compensation lecture start times (cle1-6) - show overtime start time (16:30) if exists and section is LECTURE
+      cle1:
+        schedules[0] &&
+        targetSection.kind === "LECTURE" &&
+        splitSchedules[0].overtime
+          ? splitSchedules[0].overtime.match(/(\d{1,2}[:.]\d{2})/)?.[1] || ""
+          : "",
+      cle2:
+        schedules[1] &&
+        targetSection.kind === "LECTURE" &&
+        splitSchedules[1].overtime
+          ? splitSchedules[1].overtime.match(/(\d{1,2}[:.]\d{2})/)?.[1] || ""
+          : "",
+      cle3:
+        schedules[2] &&
+        targetSection.kind === "LECTURE" &&
+        splitSchedules[2].overtime
+          ? splitSchedules[2].overtime.match(/(\d{1,2}[:.]\d{2})/)?.[1] || ""
+          : "",
+      cle4:
+        schedules[3] &&
+        targetSection.kind === "LECTURE" &&
+        splitSchedules[3].overtime
+          ? splitSchedules[3].overtime.match(/(\d{1,2}[:.]\d{2})/)?.[1] || ""
+          : "",
+      cle5:
+        schedules[4] &&
+        targetSection.kind === "LECTURE" &&
+        splitSchedules[4].overtime
+          ? splitSchedules[4].overtime.match(/(\d{1,2}[:.]\d{2})/)?.[1] || ""
+          : "",
+      cle6:
+        schedules[5] &&
+        targetSection.kind === "LECTURE" &&
+        splitSchedules[5].overtime
+          ? splitSchedules[5].overtime.match(/(\d{1,2}[:.]\d{2})/)?.[1] || ""
+          : "",
 
-      // Compensation lecture end times (cle11-66) - show end time with "น." if section is LECTURE, else "-"
-      cle11: compensations[0]
-        ? targetSection.kind === "LECTURE"
-          ? (compensations[0].newTime.match(
-              /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
-            )?.[2] || "") +
-            (compensations[0].newTime.includes("-") ? " น." : "")
-          : ""
-        : "",
-      cle22: compensations[1]
-        ? targetSection.kind === "LECTURE"
-          ? (compensations[1].newTime.match(
-              /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
-            )?.[2] || "") +
-            (compensations[1].newTime.includes("-") ? " น." : "")
-          : ""
-        : "",
-      cle33: compensations[2]
-        ? targetSection.kind === "LECTURE"
-          ? (compensations[2].newTime.match(
-              /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
-            )?.[2] || "") +
-            (compensations[2].newTime.includes("-") ? " น." : "")
-          : ""
-        : "",
-      cle44: compensations[3]
-        ? targetSection.kind === "LECTURE"
-          ? (compensations[3].newTime.match(
-              /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
-            )?.[2] || "") +
-            (compensations[3].newTime.includes("-") ? " น." : "")
-          : ""
-        : "",
-      cle55: compensations[4]
-        ? targetSection.kind === "LECTURE"
-          ? (compensations[4].newTime.match(
-              /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
-            )?.[2] || "") +
-            (compensations[4].newTime.includes("-") ? " น." : "")
-          : ""
-        : "",
-      cle66: compensations[5]
-        ? targetSection.kind === "LECTURE"
-          ? (compensations[5].newTime.match(
-              /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
-            )?.[2] || "") +
-            (compensations[5].newTime.includes("-") ? " น." : "")
-          : ""
-        : "",
+      // Compensation lecture end times (cle11-66) - show overtime end time with "น." if exists and section is LECTURE
+      cle11:
+        schedules[0] &&
+        targetSection.kind === "LECTURE" &&
+        splitSchedules[0].overtime
+          ? (splitSchedules[0].overtime.match(
+              /[-–]\s*(\d{1,2}[:.]\d{2})/
+            )?.[1] || "") + " น."
+          : "",
+      cle22:
+        schedules[1] &&
+        targetSection.kind === "LECTURE" &&
+        splitSchedules[1].overtime
+          ? (splitSchedules[1].overtime.match(
+              /[-–]\s*(\d{1,2}[:.]\d{2})/
+            )?.[1] || "") + " น."
+          : "",
+      cle33:
+        schedules[2] &&
+        targetSection.kind === "LECTURE" &&
+        splitSchedules[2].overtime
+          ? (splitSchedules[2].overtime.match(
+              /[-–]\s*(\d{1,2}[:.]\d{2})/
+            )?.[1] || "") + " น."
+          : "",
+      cle44:
+        schedules[3] &&
+        targetSection.kind === "LECTURE" &&
+        splitSchedules[3].overtime
+          ? (splitSchedules[3].overtime.match(
+              /[-–]\s*(\d{1,2}[:.]\d{2})/
+            )?.[1] || "") + " น."
+          : "",
+      cle55:
+        schedules[4] &&
+        targetSection.kind === "LECTURE" &&
+        splitSchedules[4].overtime
+          ? (splitSchedules[4].overtime.match(
+              /[-–]\s*(\d{1,2}[:.]\d{2})/
+            )?.[1] || "") + " น."
+          : "",
+      cle66:
+        schedules[5] &&
+        targetSection.kind === "LECTURE" &&
+        splitSchedules[5].overtime
+          ? (splitSchedules[5].overtime.match(
+              /[-–]\s*(\d{1,2}[:.]\d{2})/
+            )?.[1] || "") + " น."
+          : "",
 
-      // Compensation lab start times (cla1-6) - show start time if section is LAB, else "-"
-      cla1: compensations[0]
-        ? targetSection.kind === "LAB"
-          ? compensations[0].newTime.match(
-              /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
-            )?.[1] || compensations[0].newTime
-          : ""
-        : "",
-      cla2: compensations[1]
-        ? targetSection.kind === "LAB"
-          ? compensations[1].newTime.match(
-              /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
-            )?.[1] || compensations[1].newTime
-          : ""
-        : "",
-      cla3: compensations[2]
-        ? targetSection.kind === "LAB"
-          ? compensations[2].newTime.match(
-              /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
-            )?.[1] || compensations[2].newTime
-          : ""
-        : "",
-      cla4: compensations[3]
-        ? targetSection.kind === "LAB"
-          ? compensations[3].newTime.match(
-              /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
-            )?.[1] || compensations[3].newTime
-          : ""
-        : "",
-      cla5: compensations[4]
-        ? targetSection.kind === "LAB"
-          ? compensations[4].newTime.match(
-              /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
-            )?.[1] || compensations[4].newTime
-          : ""
-        : "",
-      cla6: compensations[5]
-        ? targetSection.kind === "LAB"
-          ? compensations[5].newTime.match(
-              /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
-            )?.[1] || compensations[5].newTime
-          : ""
-        : "",
+      // Compensation lab start times (cla1-6) - show overtime start time (16:30) if exists and section is LAB
+      cla1:
+        schedules[0] &&
+        targetSection.kind === "LAB" &&
+        splitSchedules[0].overtime
+          ? splitSchedules[0].overtime.match(/(\d{1,2}[:.]\d{2})/)?.[1] || ""
+          : "",
+      cla2:
+        schedules[1] &&
+        targetSection.kind === "LAB" &&
+        splitSchedules[1].overtime
+          ? splitSchedules[1].overtime.match(/(\d{1,2}[:.]\d{2})/)?.[1] || ""
+          : "",
+      cla3:
+        schedules[2] &&
+        targetSection.kind === "LAB" &&
+        splitSchedules[2].overtime
+          ? splitSchedules[2].overtime.match(/(\d{1,2}[:.]\d{2})/)?.[1] || ""
+          : "",
+      cla4:
+        schedules[3] &&
+        targetSection.kind === "LAB" &&
+        splitSchedules[3].overtime
+          ? splitSchedules[3].overtime.match(/(\d{1,2}[:.]\d{2})/)?.[1] || ""
+          : "",
+      cla5:
+        schedules[4] &&
+        targetSection.kind === "LAB" &&
+        splitSchedules[4].overtime
+          ? splitSchedules[4].overtime.match(/(\d{1,2}[:.]\d{2})/)?.[1] || ""
+          : "",
+      cla6:
+        schedules[5] &&
+        targetSection.kind === "LAB" &&
+        splitSchedules[5].overtime
+          ? splitSchedules[5].overtime.match(/(\d{1,2}[:.]\d{2})/)?.[1] || ""
+          : "",
 
-      // Compensation lab end times (cla11-66) - show end time with "น." if section is LAB, else "-"
-      cla11: compensations[0]
-        ? targetSection.kind === "LAB"
-          ? (compensations[0].newTime.match(
-              /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
-            )?.[2] || "") +
-            (compensations[0].newTime.includes("-") ? " น." : "")
-          : ""
-        : "",
-      cla22: compensations[1]
-        ? targetSection.kind === "LAB"
-          ? (compensations[1].newTime.match(
-              /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
-            )?.[2] || "") +
-            (compensations[1].newTime.includes("-") ? " น." : "")
-          : ""
-        : "",
-      cla33: compensations[2]
-        ? targetSection.kind === "LAB"
-          ? (compensations[2].newTime.match(
-              /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
-            )?.[2] || "") +
-            (compensations[2].newTime.includes("-") ? " น." : "")
-          : ""
-        : "",
-      cla44: compensations[3]
-        ? targetSection.kind === "LAB"
-          ? (compensations[3].newTime.match(
-              /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
-            )?.[2] || "") +
-            (compensations[3].newTime.includes("-") ? " น." : "")
-          : ""
-        : "",
-      cla55: compensations[4]
-        ? targetSection.kind === "LAB"
-          ? (compensations[4].newTime.match(
-              /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
-            )?.[2] || "") +
-            (compensations[4].newTime.includes("-") ? " น." : "")
-          : ""
-        : "",
-      cla66: compensations[5]
-        ? targetSection.kind === "LAB"
-          ? (compensations[5].newTime.match(
-              /(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})/
-            )?.[2] || "") +
-            (compensations[5].newTime.includes("-") ? " น." : "")
-          : ""
-        : "",
+      // Compensation lab end times (cla11-66) - show overtime end time with "น." if exists and section is LAB
+      cla11:
+        schedules[0] &&
+        targetSection.kind === "LAB" &&
+        splitSchedules[0].overtime
+          ? (splitSchedules[0].overtime.match(
+              /[-–]\s*(\d{1,2}[:.]\d{2})/
+            )?.[1] || "") + " น."
+          : "",
+      cla22:
+        schedules[1] &&
+        targetSection.kind === "LAB" &&
+        splitSchedules[1].overtime
+          ? (splitSchedules[1].overtime.match(
+              /[-–]\s*(\d{1,2}[:.]\d{2})/
+            )?.[1] || "") + " น."
+          : "",
+      cla33:
+        schedules[2] &&
+        targetSection.kind === "LAB" &&
+        splitSchedules[2].overtime
+          ? (splitSchedules[2].overtime.match(
+              /[-–]\s*(\d{1,2}[:.]\d{2})/
+            )?.[1] || "") + " น."
+          : "",
+      cla44:
+        schedules[3] &&
+        targetSection.kind === "LAB" &&
+        splitSchedules[3].overtime
+          ? (splitSchedules[3].overtime.match(
+              /[-–]\s*(\d{1,2}[:.]\d{2})/
+            )?.[1] || "") + " น."
+          : "",
+      cla55:
+        schedules[4] &&
+        targetSection.kind === "LAB" &&
+        splitSchedules[4].overtime
+          ? (splitSchedules[4].overtime.match(
+              /[-–]\s*(\d{1,2}[:.]\d{2})/
+            )?.[1] || "") + " น."
+          : "",
+      cla66:
+        schedules[5] &&
+        targetSection.kind === "LAB" &&
+        splitSchedules[5].overtime
+          ? (splitSchedules[5].overtime.match(
+              /[-–]\s*(\d{1,2}[:.]\d{2})/
+            )?.[1] || "") + " น."
+          : "",
 
-      // Compensation hours (ch1-6) - calculated from newTime
+      // Compensation hours (ch1-6) - calculated from overtime splits
       ch1: compensationHours[0] || "",
       ch2: compensationHours[1] || "",
       ch3: compensationHours[2] || "",
