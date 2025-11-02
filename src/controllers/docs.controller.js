@@ -578,9 +578,9 @@ export const generateDocx = async (req, res) => {
       return splitTimeAt1630(schedule.time);
     });
 
-    // Calculate total hours from schedules
-    const totalHours = schedules.reduce((sum, schedule) => {
-      return sum + (parseFloat(schedule.totalHour) || 0);
+    // Calculate total hours from regular splits (before 16:30)
+    const totalHours = splitSchedules.reduce((sum, split) => {
+      return sum + (split.regular ? calculateTotalHours(split.regular) : 0);
     }, 0);
 
     // Calculate compensation hours for each overtime split (ch1-6)
@@ -835,13 +835,31 @@ export const generateDocx = async (req, res) => {
             )?.[1] || "") + " น."
           : "",
 
-      // Hours (h1-6)
-      h1: schedules[0] ? schedules[0].totalHour : "",
-      h2: schedules[1] ? schedules[1].totalHour : "",
-      h3: schedules[2] ? schedules[2].totalHour : "",
-      h4: schedules[3] ? schedules[3].totalHour : "",
-      h5: schedules[4] ? schedules[4].totalHour : "",
-      h6: schedules[5] ? schedules[5].totalHour : "",
+      // Hours (h1-6) - calculated from regular split (before 16:30)
+      h1:
+        schedules[0] && splitSchedules[0].regular
+          ? calculateTotalHours(splitSchedules[0].regular)
+          : "",
+      h2:
+        schedules[1] && splitSchedules[1].regular
+          ? calculateTotalHours(splitSchedules[1].regular)
+          : "",
+      h3:
+        schedules[2] && splitSchedules[2].regular
+          ? calculateTotalHours(splitSchedules[2].regular)
+          : "",
+      h4:
+        schedules[3] && splitSchedules[3].regular
+          ? calculateTotalHours(splitSchedules[3].regular)
+          : "",
+      h5:
+        schedules[4] && splitSchedules[4].regular
+          ? calculateTotalHours(splitSchedules[4].regular)
+          : "",
+      h6:
+        schedules[5] && splitSchedules[5].regular
+          ? calculateTotalHours(splitSchedules[5].regular)
+          : "",
 
       // Compensation lecture start times (cle1-6) - show overtime start time (16:30) if exists and section is LECTURE
       cle1:
