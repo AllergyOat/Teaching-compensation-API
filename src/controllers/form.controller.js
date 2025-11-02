@@ -664,12 +664,13 @@ export const editForm = async (req, res) => {
         if (hoursDifference !== 0) {
           const existingTracking = await tx.semesterTracking.findUnique({
             where: {
-              userId_semester_year_subjectId_sectionId: {
-                userId: updatedForm.userId,
+              semester_year_subjectId_sectionId_program_section: {
                 semester: updatedForm.semester,
                 year: updatedForm.year,
                 subjectId: updatedForm.subjectId,
                 sectionId: sectionId,
+                program: updatedForm.program,
+                section: updatedForm.section,
               },
             },
           });
@@ -677,12 +678,13 @@ export const editForm = async (req, res) => {
           if (existingTracking) {
             await tx.semesterTracking.update({
               where: {
-                userId_semester_year_subjectId_sectionId: {
-                  userId: updatedForm.userId,
+                semester_year_subjectId_sectionId_program_section: {
                   semester: updatedForm.semester,
                   year: updatedForm.year,
                   subjectId: updatedForm.subjectId,
                   sectionId: sectionId,
+                  program: updatedForm.program,
+                  section: updatedForm.section,
                 },
               },
               data: {
