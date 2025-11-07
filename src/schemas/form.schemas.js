@@ -28,33 +28,37 @@ export const formSchema = z.object({
     .array(
       z.object({
         lectureId: z.string().min(1),
+        kind: z.enum(["LECTURE", "LAB"]).default("LECTURE"), // Add kind field
+        totalHours: z.number().positive().optional().nullable(), // Add totalHours for semester tracking
         schedules: z
           .array(
             z.object({
               date: z.string().min(1), // ISO date string expected; will convert to Date
               time: z.string().min(1), // e.g., "09:00-11:00"
-              totalHour: z.number().int().positive(),
+              totalHour: z.number().optional(), // Optional since it's calculated from time
               topic: z.string().min(1),
               room: z.string().min(1),
               note: z.string().optional().nullable(),
             })
           )
           .min(1, "At least one schedule is required per section"),
+
+        // Optional compensation array for this specific section
+        compensation: z
+          .array(
+            z.object({
+              originalDate: z.string().min(1),
+              originalTime: z.string().min(1),
+              newDate: z.string().min(1),
+              newTime: z.string().min(1),
+              reason: z.string().min(1),
+              originalScheduleId: z.string().optional().nullable(),
+            })
+          )
+          .optional(),
       })
     )
     .min(1, "At least one form schedule detail is required"),
-
-  compensation: z
-    .array(
-      z.object({
-        previousDate: z.string().min(1),
-        previousTime: z.string().min(1),
-        newDate: z.string().min(1),
-        newTime: z.string().min(1),
-        reason: z.string().min(1),
-      })
-    )
-    .optional(),
 });
 
 export const updateStatusSchema = z.object({

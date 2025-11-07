@@ -1,4 +1,5 @@
 import prisma from "../config/prisma.js";
+import { calculateAmount } from "../utils/calculater.js";
 
 export const listMyForms = async (req, res, next) => {
   try {
@@ -36,31 +37,46 @@ export const listMyForms = async (req, res, next) => {
         year: true,
         status: true,
         createdAt: true,
-        formScheduleDetails: { select: { sectionId: true, schedules: true } },
+        formScheduleDetails: {
+          select: { sectionId: true, schedules: true, compensation: true },
+        },
       },
     });
 
-    // Calculate total hour from all schedules
-    const totalHour = forms.reduce((sum, form) => {
-      if (form.formScheduleDetails && Array.isArray(form.formScheduleDetails)) {
-        return (
-          sum +
-          form.formScheduleDetails.reduce((sectionSum, section) => {
-            if (section.schedules && Array.isArray(section.schedules)) {
-              return (
-                sectionSum +
-                section.schedules.reduce(
-                  (schedSum, sch) => schedSum + (sch.totalHour || 0),
-                  0
-                )
-              );
-            }
-            return sectionSum;
-          }, 0)
-        );
+    // helper to sum all schedule hours
+    const sumSchedules = (schedules) =>
+      (schedules ?? []).reduce((sum, sch) => sum + (sch.totalHour || 0), 0);
+
+    // initialize accumulators
+    let totalHour = 0;
+    let totalLectureHours = 0;
+    let totalLabHours = 0;
+    let lectureAmount = 0;
+    let labAmount = 0;
+
+    for (const form of forms) {
+      // sum hours for this form
+      const formTotal = form.formScheduleDetails.reduce(
+        (sum, section) => sum + sumSchedules(section.schedules),
+        0
+      );
+
+      totalHour += formTotal;
+
+      // separate totals by form.section
+      if (form.section === "LECTURE") totalLectureHours += formTotal;
+      if (form.section === "LAB") totalLabHours += formTotal;
+
+      // Calculate amount only for APPROVED forms
+      if (form.status === "APPROVED") {
+        const amount = calculateAmount(formTotal, form.section);
+        if (form.section === "LECTURE") {
+          lectureAmount += amount;
+        } else if (form.section === "LAB") {
+          labAmount += amount;
+        }
       }
-      return sum;
-    }, 0);
+    }
 
     // Get user data
     const user = await prisma.user.findUnique({
@@ -83,6 +99,12 @@ export const listMyForms = async (req, res, next) => {
     res.json({
       total_forms: forms.length,
       totalHour,
+      totalLectureHours,
+      totalLabHours,
+      totalAmount: {
+        labAmount,
+        lectureAmount,
+      },
       user,
       forms,
     });
@@ -164,6 +186,7 @@ export const getUserProfile = async (req, res, next) => {
         major: true,
         type: true,
         teachingLevel: true,
+        email: true,
         createdAt: true,
       },
     });

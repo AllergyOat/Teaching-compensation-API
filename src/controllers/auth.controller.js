@@ -1,7 +1,7 @@
 import prisma from "../config/prisma.js";
 import bcrypt from "bcryptjs";
 import { signAccessToken } from "../utils/jwt.js";
-import { generateVerificationToken, generateOtp6 } from "../utils/tokens.js";
+import { generateVerificationToken } from "../utils/tokens.js";
 import { sendMail } from "../utils/mailer.js";
 
 const APP_URL = process.env.APP_URL || "http://localhost:4000";
@@ -83,7 +83,6 @@ export const login = async (req, res, next) => {
     next(err);
   }
 };
-
 
 export const verifyEmail = async (req, res, next) => {
   try {

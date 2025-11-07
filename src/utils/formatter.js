@@ -31,3 +31,10 @@ export const mapProgramToThai = (program) => {
   };
   return programMap[program] || program || "";
 };
+
+
+export function formatNumber(value) {
+  const num = Number(value);
+  if (isNaN(num)) return String(value);
+  return num.toLocaleString('en-US');
+}

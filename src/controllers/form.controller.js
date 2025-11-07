@@ -1,5 +1,6 @@
 import prisma from "../config/prisma.js";
 import { formSchema } from "../schemas/form.schemas.js";
+import { calculateTotalHours, calculateAmount } from "../utils/calculater.js";
 
 export const createForm = async (req, res) => {
   try {
@@ -11,12 +12,8 @@ export const createForm = async (req, res) => {
     }
     const body = parsed.data;
 
-    console.log("req.user:", req.user);
-    console.log("body.userId:", body.userId);
-
     // Prefer the authenticated user from token; allow admin to specify in body if provided
     const userId = body.userId ?? req?.user?.id;
-    console.log("Final userId:", userId);
 
     if (!userId) {
       console.error(
@@ -38,22 +35,37 @@ export const createForm = async (req, res) => {
     // create data - handle new nested structure for FormSections and Schedules
     const formSectionsCreate = [];
 
+    // Check if there's any compensation data
+    let hasCompensation = false;
+    if (body.formScheduleDetails && Array.isArray(body.formScheduleDetails)) {
+      hasCompensation = body.formScheduleDetails.some(
+        (detail) =>
+          detail.compensation &&
+          Array.isArray(detail.compensation) &&
+          detail.compensation.length > 0
+      );
+    }
+
     // Process formScheduleDetails to create FormSections with nested Schedules
     if (body.formScheduleDetails && Array.isArray(body.formScheduleDetails)) {
       body.formScheduleDetails.forEach((detail) => {
         if (detail.schedules && Array.isArray(detail.schedules)) {
-          const schedulesForSection = detail.schedules.map((s) => ({
-            date: new Date(s.date), // convert to Date
-            time: s.time,
-            totalHour: s.totalHour,
-            topic: s.topic,
-            room: s.room,
-            note: s.note ?? null,
-          }));
+          const schedulesForSection = detail.schedules.map((s) => {
+            const totalHour = calculateTotalHours(s.time);
+            return {
+              date: new Date(s.date), // convert to Date
+              time: s.time,
+              totalHour,
+              topic: s.topic,
+              room: s.room,
+              note: s.note ?? null,
+            };
+          });
 
           formSectionsCreate.push({
             sectionId: detail.lectureId,
-            kind: body.form.section === "LECTURE" ? "LECTURE" : "LAB",
+            kind: detail.kind || "LECTURE", // Use kind from request body with fallback
+            totalHours: detail.totalHours || null, // Add totalHours for semester tracking
             schedules: {
               create: schedulesForSection,
             },
@@ -62,14 +74,13 @@ export const createForm = async (req, res) => {
       });
     }
 
-    const compensationCreate = undefined; // Compensation is now handled separately through FormSections
-
     // 4) Create with Prisma (include children back)
     const created = await prisma.form.create({
       data: {
         userId,
-        isCompensated: body.form.isCompensated,
+        isCompensated: hasCompensation,
         program: body.form.program,
+        section: body.form.section,
         month: body.form.month,
         semester: body.form.semester,
         year: body.form.year,
@@ -93,7 +104,199 @@ export const createForm = async (req, res) => {
       },
     });
 
-    return res.status(201).json({ data: created });
+    // Optional: Create compensation if provided in formScheduleDetails
+    if (body.formScheduleDetails && Array.isArray(body.formScheduleDetails)) {
+      const compensationPromises = [];
+
+      body.formScheduleDetails.forEach((detail) => {
+        if (detail.compensation && Array.isArray(detail.compensation)) {
+          // Find the corresponding created form section
+          const createdSection = created.formScheduleDetails.find(
+            (section) => section.sectionId === detail.lectureId
+          );
+
+          if (createdSection) {
+            detail.compensation.forEach((comp) => {
+              // Validate required compensation fields
+              if (
+                comp.originalDate &&
+                comp.originalTime &&
+                comp.newDate &&
+                comp.newTime &&
+                comp.reason
+              ) {
+                compensationPromises.push(
+                  prisma.compensation
+                    .create({
+                      data: {
+                        formSectionId: createdSection.id,
+                        originalScheduleId: comp.originalScheduleId || null,
+                        originalDate: new Date(comp.originalDate),
+                        originalTime: comp.originalTime,
+                        newDate: new Date(comp.newDate),
+                        newTime: comp.newTime,
+                        reason: comp.reason,
+                      },
+                      include: {
+                        formSection: true,
+                        originalSchedule: true,
+                      },
+                    })
+                    .catch((error) => {
+                      console.error(
+                        `Error creating compensation for section ${detail.lectureId}:`,
+                        error
+                      );
+                      return null;
+                    })
+                );
+              }
+            });
+          }
+        }
+      });
+
+      // Wait for all compensation records to be created
+      if (compensationPromises.length > 0) {
+        await Promise.all(compensationPromises);
+      }
+    }
+
+    // Fetch the complete form with all compensation records
+    const completeForm = await prisma.form.findUnique({
+      where: { id: created.id },
+      include: {
+        formScheduleDetails: {
+          include: {
+            schedules: true,
+            compensation: true,
+          },
+        },
+        user: {
+          select: { id: true, firstName: true, lastName: true, email: true },
+        },
+      },
+    });
+
+    // Validate totalHours for new sections BEFORE creating tracking
+    const sectionsWithoutTotalHours = [];
+    for (const section of completeForm.formScheduleDetails) {
+      // Check if this section already has tracking
+      const existingTracking = await prisma.semesterTracking.findUnique({
+        where: {
+          semester_year_subjectId_sectionId_program_section: {
+            semester: completeForm.semester,
+            year: completeForm.year,
+            subjectId: completeForm.subjectId,
+            sectionId: section.sectionId,
+            program: completeForm.program,
+            section: completeForm.section,
+          },
+        },
+      });
+
+      // If no existing tracking and no totalHours provided, this is an error
+      if (
+        !existingTracking &&
+        (section.totalHours === null || section.totalHours === undefined)
+      ) {
+        sectionsWithoutTotalHours.push(section.sectionId);
+      }
+    }
+
+    // If any new sections are missing totalHours, rollback and return error
+    if (sectionsWithoutTotalHours.length > 0) {
+      // Delete the created form
+      await prisma.form.delete({
+        where: { id: created.id },
+      });
+
+      return res.status(400).json({
+        message: "Cannot create form: totalHours is required for new sections",
+        missingSections: sectionsWithoutTotalHours,
+      });
+    }
+
+    // Update or Create SemesterTracking for each section
+    for (const section of completeForm.formScheduleDetails) {
+      // Calculate hours used in this month
+      const hoursUsedThisMonth = section.schedules.reduce(
+        (sum, schedule) => sum + (schedule.totalHour || 0),
+        0
+      );
+
+      // Skip if no hours used this month
+      if (hoursUsedThisMonth === 0) {
+        continue;
+      }
+
+      // Check if tracking already exists
+      const existingTracking = await prisma.semesterTracking.findUnique({
+        where: {
+          semester_year_subjectId_sectionId_program_section: {
+            semester: completeForm.semester,
+            year: completeForm.year,
+            subjectId: completeForm.subjectId,
+            sectionId: section.sectionId,
+            program: completeForm.program,
+            section: completeForm.section,
+          },
+        },
+      });
+
+      if (existingTracking) {
+        // Update existing tracking (works even without totalHours)
+        await prisma.semesterTracking.update({
+          where: {
+            semester_year_subjectId_sectionId_program_section: {
+              semester: completeForm.semester,
+              year: completeForm.year,
+              subjectId: completeForm.subjectId,
+              sectionId: section.sectionId,
+              program: completeForm.program,
+              section: completeForm.section,
+            },
+          },
+          data: {
+            hoursUsed: {
+              increment: hoursUsedThisMonth,
+            },
+            hoursRemaining: {
+              decrement: hoursUsedThisMonth,
+            },
+            updatedAt: new Date(),
+          },
+        });
+      } else if (
+        section.totalHours !== null &&
+        section.totalHours !== undefined
+      ) {
+        // Create new tracking (requires totalHours)
+        await prisma.semesterTracking.create({
+          data: {
+            userId: completeForm.userId,
+            semester: completeForm.semester,
+            year: completeForm.year,
+            subjectId: completeForm.subjectId,
+            subjectName: completeForm.subjectName,
+            sectionId: section.sectionId,
+            program: completeForm.program, // Add program field
+            section: completeForm.section, // Add section field
+            kind: section.kind || "LECTURE",
+            totalHoursRequired: section.totalHours,
+            hoursUsed: hoursUsedThisMonth,
+            hoursRemaining: section.totalHours - hoursUsedThisMonth,
+          },
+        });
+      } else {
+        // Warning: Cannot create tracking without totalHours
+        console.warn(
+          `Cannot create SemesterTracking for ${completeForm.subjectId} section ${section.sectionId}: totalHours not provided`
+        );
+      }
+    }
+
+    return res.status(201).json({ data: completeForm });
   } catch (err) {
     console.error("createForm error:", err);
     return res.status(500).json({ message: "Internal Server Error" });
@@ -291,24 +494,53 @@ export const editForm = async (req, res) => {
       });
     }
 
+    // Calculate old hours by section BEFORE editing
+    const oldHoursBySection = {};
+    existingForm.formScheduleDetails.forEach((section) => {
+      const hours = section.schedules.reduce(
+        (sum, schedule) => sum + (schedule.totalHour || 0),
+        0
+      );
+      oldHoursBySection[section.sectionId] = hours;
+    });
+
     // Use transaction for atomic updates
     const updated = await prisma.$transaction(async (tx) => {
+      // First, delete existing formScheduleDetails to avoid conflicts
+      await tx.formSections.deleteMany({
+        where: { formId: formId },
+      });
+
+      // Check if there's any compensation data
+      let hasCompensation = false;
+      if (body.formScheduleDetails && Array.isArray(body.formScheduleDetails)) {
+        hasCompensation = body.formScheduleDetails.some(
+          (detail) =>
+            detail.compensation &&
+            Array.isArray(detail.compensation) &&
+            detail.compensation.length > 0
+        );
+      }
+
       const formSectionsCreate = [];
       if (body.formScheduleDetails && Array.isArray(body.formScheduleDetails)) {
         body.formScheduleDetails.forEach((detail) => {
           if (detail.schedules && Array.isArray(detail.schedules)) {
-            const schedulesForSection = detail.schedules.map((s) => ({
-              date: new Date(s.date),
-              time: s.time,
-              totalHour: s.totalHour,
-              topic: s.topic,
-              room: s.room,
-              note: s.note ?? null,
-            }));
+            const schedulesForSection = detail.schedules.map((s) => {
+              const totalHour = calculateTotalHours(s.time);
+              return {
+                date: new Date(s.date), // convert to Date
+                time: s.time,
+                totalHour,
+                topic: s.topic,
+                room: s.room,
+                note: s.note ?? null,
+              };
+            });
 
             formSectionsCreate.push({
               sectionId: detail.lectureId,
-              kind: body.form.section === "LECTURE" ? "LECTURE" : "LAB",
+              kind: detail.kind || "LECTURE", // Use kind from request body with fallback
               schedules: {
                 create: schedulesForSection,
               },
@@ -317,19 +549,20 @@ export const editForm = async (req, res) => {
         });
       }
 
-      // Compensation is now handled separately - not created through form creation
-
       // Update form with new data
       const updatedForm = await tx.form.update({
         where: { id: formId },
         data: {
-          isCompensated: body.form.isCompensated,
+          isCompensated: hasCompensation,
           program: body.form.program,
+          section: body.form.section, // Add missing section field
           month: body.form.month,
           semester: body.form.semester,
           year: body.form.year,
           subjectId: body.form.subjectId,
           subjectName: body.form.subjectName,
+          status: "PENDING",
+          adminComment: null,
           formScheduleDetails: {
             create: formSectionsCreate,
           },
@@ -349,13 +582,170 @@ export const editForm = async (req, res) => {
         },
       });
 
+      // Create compensation records if provided
+      if (body.formScheduleDetails && Array.isArray(body.formScheduleDetails)) {
+        const compensationPromises = [];
+
+        body.formScheduleDetails.forEach((detail) => {
+          if (detail.compensation && Array.isArray(detail.compensation)) {
+            // Find the corresponding created form section
+            const createdSection = updatedForm.formScheduleDetails.find(
+              (section) => section.sectionId === detail.lectureId
+            );
+
+            if (createdSection) {
+              detail.compensation.forEach((comp) => {
+                // Validate required compensation fields
+                if (
+                  comp.originalDate &&
+                  comp.originalTime &&
+                  comp.newDate &&
+                  comp.newTime &&
+                  comp.reason
+                ) {
+                  compensationPromises.push(
+                    tx.compensation
+                      .create({
+                        data: {
+                          formSectionId: createdSection.id,
+                          originalScheduleId: comp.originalScheduleId || null,
+                          originalDate: new Date(comp.originalDate),
+                          originalTime: comp.originalTime,
+                          newDate: new Date(comp.newDate),
+                          newTime: comp.newTime,
+                          reason: comp.reason,
+                        },
+                        include: {
+                          formSection: true,
+                          originalSchedule: true,
+                        },
+                      })
+                      .catch((error) => {
+                        console.error(
+                          `Error creating compensation for section ${detail.lectureId}:`,
+                          error
+                        );
+                        return null;
+                      })
+                  );
+                }
+              });
+            }
+          }
+        });
+
+        // Wait for all compensation records to be created
+        if (compensationPromises.length > 0) {
+          await Promise.all(compensationPromises);
+        }
+      }
+
+      // Calculate new hours by section AFTER editing
+      const newHoursBySection = {};
+      updatedForm.formScheduleDetails.forEach((section) => {
+        const hours = section.schedules.reduce(
+          (sum, schedule) => sum + (schedule.totalHour || 0),
+          0
+        );
+        newHoursBySection[section.sectionId] = hours;
+      });
+
+      // Update SemesterTracking based on the difference
+      const allSectionIds = new Set([
+        ...Object.keys(oldHoursBySection),
+        ...Object.keys(newHoursBySection),
+      ]);
+
+      for (const sectionId of allSectionIds) {
+        const oldHours = oldHoursBySection[sectionId] || 0;
+        const newHours = newHoursBySection[sectionId] || 0;
+        const hoursDifference = newHours - oldHours;
+
+        if (hoursDifference !== 0) {
+          const existingTracking = await tx.semesterTracking.findUnique({
+            where: {
+              semester_year_subjectId_sectionId_program_section: {
+                semester: updatedForm.semester,
+                year: updatedForm.year,
+                subjectId: updatedForm.subjectId,
+                sectionId: sectionId,
+                program: updatedForm.program,
+                section: updatedForm.section,
+              },
+            },
+          });
+
+          if (existingTracking) {
+            await tx.semesterTracking.update({
+              where: {
+                semester_year_subjectId_sectionId_program_section: {
+                  semester: updatedForm.semester,
+                  year: updatedForm.year,
+                  subjectId: updatedForm.subjectId,
+                  sectionId: sectionId,
+                  program: updatedForm.program,
+                  section: updatedForm.section,
+                },
+              },
+              data: {
+                hoursUsed: {
+                  increment: hoursDifference,
+                },
+                hoursRemaining: {
+                  decrement: hoursDifference,
+                },
+                updatedAt: new Date(),
+              },
+            });
+          } else if (newHours > 0) {
+            // Create new tracking if this is a new section
+            const section = updatedForm.formScheduleDetails.find(
+              (s) => s.sectionId === sectionId
+            );
+            if (section && section.totalHours) {
+              await tx.semesterTracking.create({
+                data: {
+                  userId: updatedForm.userId,
+                  semester: updatedForm.semester,
+                  year: updatedForm.year,
+                  subjectId: updatedForm.subjectId,
+                  subjectName: updatedForm.subjectName,
+                  sectionId: sectionId,
+                  kind: section.kind || "LECTURE",
+                  totalHoursRequired: section.totalHours,
+                  hoursUsed: newHours,
+                  hoursRemaining: section.totalHours - newHours,
+                },
+              });
+            }
+          }
+        }
+      }
+
       return updatedForm;
     });
 
-    console.log("Form updated successfully:", updated.id);
+    // Fetch the complete form with all compensation records
+    const completeForm = await prisma.form.findUnique({
+      where: { id: updated.id },
+      include: {
+        formScheduleDetails: {
+          include: {
+            schedules: {
+              orderBy: { date: "asc" },
+            },
+            compensation: true,
+          },
+        },
+        user: {
+          select: { id: true, firstName: true, lastName: true, email: true },
+        },
+      },
+    });
+
     return res.status(200).json({
       message: "Form updated successfully",
-      data: updated,
+      data: completeForm,
     });
   } catch (error) {
     console.error("editForm error:", error);
@@ -425,6 +815,52 @@ export const getFormById = async (req, res) => {
       });
     }
 
+    if (isAdmin) {
+      // Calculate amounts for each section and total for admin
+      const calculatedData = {
+        ...form,
+        formScheduleDetails: form.formScheduleDetails.map((section) => {
+          // Calculate total hours for this section
+          const totalHours = section.schedules.reduce((sum, schedule) => {
+            return sum + (schedule.totalHour || 0);
+          }, 0);
+
+          // Calculate amount based on form.section (not section.kind)
+          const amount = calculateAmount(totalHours, form.section);
+
+          return {
+            ...section,
+            totalHours,
+            amount,
+          };
+        }),
+      };
+
+      // Calculate Total Hour Amount
+      const totalHourAmount = calculatedData.formScheduleDetails.reduce(
+        (sum, section) => {
+          return sum + (section.totalHours || 0);
+        },
+        0
+      );
+
+      // Calculate grand total
+      const grandTotal = calculatedData.formScheduleDetails.reduce(
+        (sum, section) => {
+          return sum + (section.amount || 0);
+        },
+        0
+      );
+
+      calculatedData.totalHourAmount = totalHourAmount;
+      calculatedData.grandTotal = grandTotal;
+
+      return res.status(200).json({
+        message: "Form retrieved successfully",
+        data: calculatedData,
+      });
+    }
+
     return res.status(200).json({
       message: "Form retrieved successfully",
       data: form,
@@ -446,14 +882,15 @@ export const deleteForm = async (req, res) => {
       return res.status(400).json({ message: "Form ID is required" });
     }
 
-    // Find existing form
+    // Find existing form with all sections and schedules
     const existingForm = await prisma.form.findUnique({
       where: { id: formId },
-      select: {
-        id: true,
-        userId: true,
-        subjectName: true,
-        user: { select: { role: true } },
+      include: {
+        formScheduleDetails: {
+          include: {
+            schedules: true,
+          },
+        },
       },
     });
 
@@ -472,12 +909,97 @@ export const deleteForm = async (req, res) => {
       });
     }
 
-    // Delete form (cascade will handle related records)
-    await prisma.form.delete({
-      where: { id: formId },
+    // Calculate hours to remove from tracking BEFORE deleting
+    const trackingUpdates = [];
+    for (const section of existingForm.formScheduleDetails) {
+      const hoursToRemove = section.schedules.reduce(
+        (sum, schedule) => sum + (schedule.totalHour || 0),
+        0
+      );
+
+      if (hoursToRemove > 0) {
+        trackingUpdates.push({
+          userId: existingForm.userId,
+          semester: existingForm.semester,
+          year: existingForm.year,
+          subjectId: existingForm.subjectId,
+          sectionId: section.sectionId,
+          program: existingForm.program,
+          section: existingForm.section,
+          hoursToRemove,
+        });
+      }
+    }
+
+    // Use transaction to ensure atomicity
+    await prisma.$transaction(async (tx) => {
+      // Delete form (cascade will handle related records)
+      await tx.form.delete({
+        where: { id: formId },
+      });
+
+      // Update SemesterTracking - reduce hours
+      for (const update of trackingUpdates) {
+        const existingTracking = await tx.semesterTracking.findUnique({
+          where: {
+            semester_year_subjectId_sectionId_program_section: {
+              semester: update.semester,
+              year: update.year,
+              subjectId: update.subjectId,
+              sectionId: update.sectionId,
+              program: update.program,
+              section: update.section,
+            },
+          },
+        });
+
+        if (existingTracking) {
+          // Calculate what hours would remain after removing this form's hours
+          const remainingHoursAfterDelete =
+            existingTracking.hoursUsed - update.hoursToRemove;
+
+          if (remainingHoursAfterDelete <= 0) {
+            // If no hours left, delete the tracking record
+            await tx.semesterTracking.delete({
+              where: {
+                semester_year_subjectId_sectionId_program_section: {
+                  semester: update.semester,
+                  year: update.year,
+                  subjectId: update.subjectId,
+                  sectionId: update.sectionId,
+                  program: update.program,
+                  section: update.section,
+                },
+              },
+            });
+          } else {
+            // Otherwise, just reduce the hours
+            await tx.semesterTracking.update({
+              where: {
+                semester_year_subjectId_sectionId_program_section: {
+                  semester: update.semester,
+                  year: update.year,
+                  subjectId: update.subjectId,
+                  sectionId: update.sectionId,
+                  program: update.program,
+                  section: update.section,
+                },
+              },
+              data: {
+                hoursUsed: {
+                  decrement: update.hoursToRemove,
+                },
+                hoursRemaining: {
+                  increment: update.hoursToRemove,
+                },
+                updatedAt: new Date(),
+              },
+            });
+          }
+        }
+      }
     });
 
-    console.log("Form deleted successfully:", formId);
     return res.status(200).json({
       message: "Form deleted successfully",
       deletedFormId: formId,
@@ -489,6 +1011,64 @@ export const deleteForm = async (req, res) => {
       return res.status(404).json({ message: "Form not found" });
     }
 
+    return res.status(500).json({
+      message: "Internal Server Error",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+};
+
+export const getSemesterTracking = async (req, res) => {
+  try {
+    const { semester, year, program, section } = req.query;
+
+    if (!semester) {
+      return res.status(400).json({
+        message: "semester is required",
+      });
+    }
+
+    // Build where clause for tracking
+    const trackingWhere = {
+      semester,
+      ...(year && { year: parseInt(year) }), // Filter by year if provided
+      ...(program && { program }), // Filter by program if provided
+      ...(section && { section }), // Filter by section if provided
+    };
+
+    // Get tracking records directly with program filter
+    const trackings = await prisma.semesterTracking.findMany({
+      where: trackingWhere,
+      orderBy: [{ subjectId: "asc" }, { sectionId: "asc" }],
+    });
+
+    // Group by subject and use program from tracking
+    const groupedBySubject = trackings.reduce((acc, track) => {
+      if (!acc[track.subjectId]) {
+        acc[track.subjectId] = {
+          subjectId: track.subjectId,
+          subjectName: track.subjectName,
+          program: track.program, // Use program from SemesterTracking
+          semester: track.semester,
+          section: track.section,
+          sections: [],
+        };
+      }
+      acc[track.subjectId].sections.push({
+        sectionId: track.sectionId,
+        kind: track.kind,
+        totalHoursRequired: track.totalHoursRequired,
+        hoursUsed: track.hoursUsed,
+        hoursRemaining: track.hoursRemaining,
+      });
+      return acc;
+    }, {});
+
+    return res.status(200).json({
+      data: Object.values(groupedBySubject),
+    });
+  } catch (error) {
+    console.error("getSemesterTracking error:", error);
     return res.status(500).json({
       message: "Internal Server Error",
       error: process.env.NODE_ENV === "development" ? error.message : undefined,
