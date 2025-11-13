@@ -1,11 +1,14 @@
 {
   "name": "server",
   "version": "1.0.0",
-  "main": "index.js",
+  "main": "src/server.js",
   "type": "module",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "nodemon src/server.js"
+    "dev": "nodemon src/server.js",
+    "start": "prisma migrate deploy && node src/server.js",
+    "build": "prisma generate",
+    "migrate": "prisma migrate deploy"
   },
   "keywords": [],
   "author": "",
