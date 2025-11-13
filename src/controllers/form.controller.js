@@ -1,6 +1,8 @@
 import prisma from "../config/prisma.js";
 import { formSchema } from "../schemas/form.schemas.js";
 import { calculateTotalHours, calculateAmount } from "../utils/calculater.js";
+import { validateNoTimeOverlap } from "../utils/validatordatetime.js";
+
 
 export const createForm = async (req, res) => {
   try {
@@ -11,6 +13,33 @@ export const createForm = async (req, res) => {
         .json({ message: "Validation failed", errors: parsed.error.flatten() });
     }
     const body = parsed.data;
+
+    // Validate no time overlaps on the same date
+    const timeConflicts = validateNoTimeOverlap(body.formScheduleDetails);
+    if (timeConflicts.length > 0) {
+      // Check if it's an invalid time range error
+      if (timeConflicts[0].isInvalidRange) {
+        return res.status(400).json({
+          message: "Invalid time range detected",
+          conflicts: timeConflicts.map((conflict) => ({
+            date: conflict.date,
+            time: conflict.time1,
+            topic: conflict.topic1,
+            section: conflict.lectureId1,
+            reason: conflict.reason
+          })),
+        });
+      }
+      
+      // Otherwise it's a time overlap error
+      return res.status(400).json({
+        message: "Time conflict detected: Schedules cannot overlap on the same date",
+        conflicts: timeConflicts.map((conflict) => ({
+          date: conflict.date,
+          conflict: `"${conflict.topic1}" (${conflict.time1}, หมู่: ${conflict.lectureId1}) ทับซ้อนกับ "${conflict.topic2}" (${conflict.time2}, หมู่: ${conflict.lectureId2})`,
+        })),
+      });
+    }
 
     // Prefer the authenticated user from token; allow admin to specify in body if provided
     const userId = body.userId ?? req?.user?.id;
@@ -52,6 +81,7 @@ export const createForm = async (req, res) => {
         if (detail.schedules && Array.isArray(detail.schedules)) {
           const schedulesForSection = detail.schedules.map((s) => {
             const totalHour = calculateTotalHours(s.time);
+            // validate time cannot be same start and end
             return {
               date: new Date(s.date), // convert to Date
               time: s.time,
@@ -464,6 +494,33 @@ export const editForm = async (req, res) => {
         .json({ message: "Validation failed", errors: parsed.error.flatten() });
     }
     const body = parsed.data;
+
+    // Validate no time overlaps on the same date
+    const timeConflicts = validateNoTimeOverlap(body.formScheduleDetails);
+    if (timeConflicts.length > 0) {
+      // Check if it's an invalid time range error
+      if (timeConflicts[0].isInvalidRange) {
+        return res.status(400).json({
+          message: "Invalid time range detected",
+          conflicts: timeConflicts.map((conflict) => ({
+            date: conflict.date,
+            time: conflict.time1,
+            topic: conflict.topic1,
+            section: conflict.lectureId1,
+            reason: conflict.reason
+          })),
+        });
+      }
+      
+      // Otherwise it's a time overlap error
+      return res.status(400).json({
+        message: "Time conflict detected: Schedules cannot overlap on the same date",
+        conflicts: timeConflicts.map((conflict) => ({
+          date: conflict.date,
+          conflict: `"${conflict.topic1}" (${conflict.time1}, หมู่: ${conflict.lectureId1}) ทับซ้อนกับ "${conflict.topic2}" (${conflict.time2}, หมู่: ${conflict.lectureId2})`,
+        })),
+      });
+    }
 
     // Find existing form
     const existingForm = await prisma.form.findUnique({
