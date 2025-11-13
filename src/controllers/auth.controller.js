@@ -1,7 +1,7 @@
 import prisma from "../config/prisma.js";
 import bcrypt from "bcryptjs";
 import { signAccessToken } from "../utils/jwt.js";
-import { generateVerificationToken } from "../utils/tokens.js";
+import { generateVerificationToken, generateOtp6 } from "../utils/tokens.js";
 import { sendMail } from "../utils/mailer.js";
 
 const APP_URL = process.env.APP_URL || "http://localhost:4000";
@@ -126,7 +126,22 @@ export const forgotPassword = async (req, res, next) => {
         message: "If that email exists, an OTP has been sent",
       });
 
-    const otp = Math.floor(100000 + Math.random() * 900000).toString(); // 6 digits
+    // Rate limiting: Check how many OTPs sent in the last hour
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    const recentOtps = await prisma.passwordResetOtp.count({
+      where: {
+        userId: user.id,
+        createdAt: { gte: oneHourAgo },
+      },
+    });
+
+    if (recentOtps >= 3) {
+      return res.status(429).json({
+        message: "Too many requests. Please try again later.",
+      });
+    }
+
+    const otp = generateOtp6();
     const otpHash = await bcrypt.hash(otp, 10);
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 min
 
@@ -137,11 +152,51 @@ export const forgotPassword = async (req, res, next) => {
     await sendMail({
       to: user.email,
       subject: "Your password reset OTP",
-      text: `Your OTP is: ${otp} (valid for 10 minutes)`,
-      html: `<p>Your OTP is: <b>${otp}</b> (valid for 10 minutes)</p>`,
+      html: `
+        <h1>Password Reset OTP</h1>
+        <p>Your OTP is: <b>${otp}</b></p>
+        <p>This OTP will expire in 10 minutes.</p>
+        `,
+    });
+    return res.json({ message: "If that email exists, an OTP has been sent" });
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const verifyResetOtp = async (req, res, next) => {
+  try {
+    const { email, otp } = req.body;
+
+    if (!email || !otp) {
+      return res.status(400).json({ message: "Email and OTP are required" });
+    }
+
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user) {
+      return res.status(400).json({ message: "Invalid email or OTP" });
+    }
+
+    // Get the most recent unused OTP
+    const record = await prisma.passwordResetOtp.findFirst({
+      where: { userId: user.id, used: false, expiresAt: { gt: new Date() } },
+      orderBy: { expiresAt: "desc" },
     });
 
-    return res.json({ message: "If that email exists, an OTP has been sent" });
+    if (!record) {
+      return res.status(400).json({ message: "Invalid or expired OTP" });
+    }
+
+    const ok = await bcrypt.compare(String(otp), record.otpHash);
+
+    if (!ok) {
+      return res.status(400).json({ message: "Invalid or expired OTP" });
+    }
+
+    return res.json({
+      message: "OTP verified successfully",
+      valid: true,
+    });
   } catch (err) {
     next(err);
   }
@@ -152,45 +207,45 @@ export const resetPassword = async (req, res, next) => {
     const { email, otp, newPassword } = req.body;
 
     const user = await prisma.user.findUnique({ where: { email } });
-    if (!user) return res.status(400).json({ message: "Invalid email or OTP" });
+    if (!user) {
+      return res.status(400).json({ message: "Invalid request" });
+    }
 
-    // Get the most recent unused OTP
+    // Verify OTP again
     const record = await prisma.passwordResetOtp.findFirst({
-      where: { userId: user.id, usedAt: null, expiresAt: { gt: new Date() } },
+      where: {
+        userId: user.id,
+        used: false,
+        expiresAt: { gt: new Date() },
+      },
       orderBy: { expiresAt: "desc" },
     });
 
-    if (!record)
-      return res.status(400).json({ message: "Invalid or expired OTP" });
-
-    // rate-limit attempts
-    if (record.attempts >= 5)
-      return res.status(429).json({ message: "Too many attempts" });
-
-    const ok = await bcrypt.compare(otp, record.otpHash);
-
-    if (!ok) {
-      await prisma.passwordResetOtp.update({
-        where: { id: record.id },
-        data: { attempts: { increment: 1 } },
-      });
+    if (!record) {
       return res.status(400).json({ message: "Invalid or expired OTP" });
     }
 
-    const newHash = await bcrypt.hash(newPassword, 10);
+    const ok = await bcrypt.compare(otp, record.otpHash);
+    if (!ok) {
+      return res.status(400).json({ message: "Invalid OTP" });
+    }
 
-    await prisma.$transaction(async (tx) => {
-      await tx.user.update({
+    // Hash new password
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    // Update password AND mark OTP as used in a transaction
+    await prisma.$transaction([
+      prisma.user.update({
         where: { id: user.id },
-        data: { password: newHash },
-      });
-      await tx.passwordResetOtp.update({
+        data: { password: hashedPassword },
+      }),
+      prisma.passwordResetOtp.update({
         where: { id: record.id },
-        data: { usedAt: new Date() },
-      });
-    });
+        data: { used: true },
+      }),
+    ]);
 
-    return res.json({ message: "Password has been reset" });
+    return res.json({ message: "Password reset successfully" });
   } catch (err) {
     next(err);
   }
