@@ -36,7 +36,7 @@ export const createForm = async (req, res) => {
         message: "Time conflict detected: Schedules cannot overlap on the same date",
         conflicts: timeConflicts.map((conflict) => ({
           date: conflict.date,
-          conflict: `"${conflict.topic1}" (${conflict.time1}, Section: ${conflict.lectureId1}) overlaps with "${conflict.topic2}" (${conflict.time2}, Section: ${conflict.lectureId2})`,
+          conflict: `"${conflict.topic1}" (${conflict.time1}, หมู่: ${conflict.lectureId1}) ทับซ้อนกับ "${conflict.topic2}" (${conflict.time2}, หมู่: ${conflict.lectureId2})`,
         })),
       });
     }
@@ -517,7 +517,7 @@ export const editForm = async (req, res) => {
         message: "Time conflict detected: Schedules cannot overlap on the same date",
         conflicts: timeConflicts.map((conflict) => ({
           date: conflict.date,
-          conflict: `"${conflict.topic1}" (${conflict.time1}, Section: ${conflict.lectureId1}) overlaps with "${conflict.topic2}" (${conflict.time2}, Section: ${conflict.lectureId2})`,
+          conflict: `"${conflict.topic1}" (${conflict.time1}, หมู่: ${conflict.lectureId1}) ทับซ้อนกับ "${conflict.topic2}" (${conflict.time2}, หมู่: ${conflict.lectureId2})`,
         })),
       });
     }
