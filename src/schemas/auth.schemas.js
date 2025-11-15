@@ -38,7 +38,8 @@ export const verifyEmailSchema = {
 
 export const forgotPasswordSchema = {
   body: z.object({
-    email: z.string().email()
+    email: z.string().email(),
+    otp: z.string().length(6).optional()
   })
 };
 
