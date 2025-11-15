@@ -174,7 +174,7 @@ export const verifyResetOtp = async (req, res, next) => {
 
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user) {
-      return res.status(400).json({ message: "Invalid email or OTP" });
+      return res.status(400).json({ message: "อีเมลหรือรหัสไม่ถูกต้อง" });
     }
 
     // Get the most recent unused OTP
@@ -184,13 +184,13 @@ export const verifyResetOtp = async (req, res, next) => {
     });
 
     if (!record) {
-      return res.status(400).json({ message: "Invalid or expired OTP" });
+      return res.status(400).json({ message: "รหัสไม่ถูกต้องหรือหมดอายุ" });
     }
 
     const ok = await bcrypt.compare(String(otp), record.otpHash);
 
     if (!ok) {
-      return res.status(400).json({ message: "Invalid or expired OTP" });
+      return res.status(400).json({ message: "รหัสไม่ถูกต้อง" });
     }
 
     return res.json({
@@ -222,12 +222,12 @@ export const resetPassword = async (req, res, next) => {
     });
 
     if (!record) {
-      return res.status(400).json({ message: "Invalid or expired OTP" });
+      return res.status(400).json({ message: "รหัสไม่ถูกต้องหรือหมดอายุ" });
     }
 
     const ok = await bcrypt.compare(otp, record.otpHash);
     if (!ok) {
-      return res.status(400).json({ message: "Invalid OTP" });
+      return res.status(400).json({ message: "รหัสไม่ถูกต้องหรือหมดอายุ" });
     }
 
     // Hash new password
