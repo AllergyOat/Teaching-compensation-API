@@ -1,7 +1,7 @@
 import prisma from "../config/prisma.js";
 import bcrypt from "bcryptjs";
 import { signAccessToken } from "../utils/jwt.js";
-import { generateVerificationToken, generateOtp6 } from "../utils/tokens.js";
+import { generateOtp6 } from "../utils/tokens.js";
 import { sendMail } from "../utils/mailer.js";
 
 const APP_URL = process.env.APP_URL || "http://localhost:4000";
@@ -16,29 +16,11 @@ export const register = async (req, res, next) => {
 
     const hashed = await bcrypt.hash(password, 10);
 
-    // Prevent privilege escalation from public register:
     const roleToUse = role === "MAJOR_ADMIN" ? "USER" : role || "USER";
 
     const user = await prisma.user.create({
       data: { email, password: hashed, role: roleToUse },
       select: { id: true, email: true, role: true, createdAt: true },
-    });
-
-    // Create email verification token (valid 24h)
-    const token = generateVerificationToken();
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-
-    await prisma.emailVerificationToken.create({
-      data: { userId: user.id, token, expiresAt },
-    });
-
-    // Send email (link version + token version)
-    const verifyLink = `${APP_URL}/api/auth/verify-email?token=${token}`;
-    await sendMail({
-      to: user.email,
-      subject: "Verify your email",
-      text: `Verify your email: ${verifyLink}`,
-      html: `<p>Click to verify your email:</p><p><a href="${verifyLink}">${verifyLink}</a></p>`,
     });
 
     const accessToken = signAccessToken({
@@ -50,7 +32,7 @@ export const register = async (req, res, next) => {
     return res.status(201).json({
       user,
       accessToken,
-      message: "Registered. Verification email sent.",
+      message: "Registered successfully.",
     });
   } catch (err) {
     next(err);
